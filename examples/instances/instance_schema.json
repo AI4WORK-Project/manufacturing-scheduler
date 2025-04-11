@@ -1,0 +1,105 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "drawers": {
+            "type": "array",
+            "description": "List of available drawers. If a drawer is not listed here, it is considered unavailable.",
+            "items": {
+                "type": "integer",
+                "description": "Drawer identifier"
+            }
+        },
+        "replenish_windows": {
+            "type": "array",
+            "description": "List of temporal windows (in time units, e.g., seconds) during which replenishment activities can occur.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "start": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Start time of the replenishment window."
+                    },
+                    "end": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "End time of the replenishment window."
+                    }
+                },
+                "required": [
+                    "start",
+                    "end"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "orders": {
+            "type": "object",
+            "description": "List of orders coming from the ERP system.",
+            "properties": {
+                "date": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "order": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "item": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "height": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "width": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "depth": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "box": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": [
+                "date",
+                "order",
+                "item",
+                "height",
+                "width",
+                "depth",
+                "box"
+            ],
+            "additionalProperties": false
+        }
+    },
+    "required": [
+        "drawers",
+        "replenish_windows",
+        "orders"
+    ],
+    "additionalProperties": false
+}

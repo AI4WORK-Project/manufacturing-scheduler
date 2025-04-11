@@ -1,0 +1,71 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "operators": {
+            "type": "integer",
+            "description": "Number of packaging operators.",
+            "minimum": 1
+        },
+        "drawer_capacities": {
+            "type": "array",
+            "description": "Drawer capacities by box type.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "box": {
+                        "type": "string"
+                    },
+                    "capacity": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "required": [
+                    "box",
+                    "capacity"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "replenish_duration": {
+            "type": "integer",
+            "description": "Duration of replenishment activities. All the replenishments have the same duration.",
+            "minimum": 1
+        },
+        "box_construction_duration": {
+            "type": "integer",
+            "description": "Duration of box construction activities. All the box constructions have the same duration.",
+            "minimum": 1
+        },
+        "box_filling_durations": {
+            "type": "array",
+            "description": "Filling durations for each box type. The duration depends on the box type.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "box": {
+                        "type": "string"
+                    },
+                    "filling_duration": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "required": [
+                    "box",
+                    "filling_duration"
+                ],
+                "additionalProperties": false
+            }
+        }
+    },
+    "required": [
+        "operators",
+        "drawer_capacities",
+        "replenish_duration",
+        "box_construction_duration",
+        "box_filling_durations"
+    ],
+    "additionalProperties": false
+}

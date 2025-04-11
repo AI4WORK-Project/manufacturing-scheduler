@@ -1,0 +1,73 @@
+{
+    "operators": 4,
+    "drawer_capacities": [
+        {
+            "box": "A",
+            "capacity": 10
+        },
+        {
+            "box": "B",
+            "capacity": 10
+        },
+        {
+            "box": "C",
+            "capacity": 10
+        },
+        {
+            "box": "D",
+            "capacity": 10
+        },
+        {
+            "box": "E",
+            "capacity": 10
+        },
+        {
+            "box": "F",
+            "capacity": 10
+        },
+        {
+            "box": "G",
+            "capacity": 10
+        },
+        {
+            "box": "H",
+            "capacity": 10
+        }
+    ],
+    "replenish_duration": 13,
+    "box_construction_duration": 7,
+    "box_filling_durations": [
+        {
+            "box": "A",
+            "filling_duration": 14
+        },
+        {
+            "box": "B",
+            "filling_duration": 14
+        },
+        {
+            "box": "C",
+            "filling_duration": 13
+        },
+        {
+            "box": "D",
+            "filling_duration": 13
+        },
+        {
+            "box": "E",
+            "filling_duration": 15
+        },
+        {
+            "box": "F",
+            "filling_duration": 16
+        },
+        {
+            "box": "G",
+            "filling_duration": 13
+        },
+        {
+            "box": "H",
+            "filling_duration": 13
+        }
+    ]
+}

@@ -1,0 +1,206 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Solution Output Schema",
+    "description": "Schema representing the output of the scheduler.",
+    "type": "object",
+    "properties": {
+        "is_solution_optimal": {
+            "type": "boolean",
+            "description": "Boolean flag indicating if the solution found is optimal (true) or just feasible (false)."
+        },
+        "drawer_box_mapping": {
+            "type": "array",
+            "description": "List mapping each drawer to its assigned box type.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "drawer": {
+                        "type": "integer",
+                        "description": "Drawer ID."
+                    },
+                    "box": {
+                        "type": "string",
+                        "description": "Box type."
+                    }
+                },
+                "required": [
+                    "drawer",
+                    "box"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "replenishments": {
+            "type": "array",
+            "description": "List of replenishment activities.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "drawer": {
+                        "type": "integer",
+                        "description": "Drawer in which replenishment occurs."
+                    },
+                    "box": {
+                        "type": "string",
+                        "description": "Type of box replenished."
+                    },
+                    "start": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Start time of the replenishment activity."
+                    }
+                },
+                "required": [
+                    "drawer",
+                    "box",
+                    "start"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "box_constructions": {
+            "type": "array",
+            "description": "List of drawers used for box construction activities.",
+            "items": {
+                "type": "integer",
+                "description": "Drawer ID."
+            }
+        },
+        "orders": {
+            "type": "object",
+            "description": "List of orders coming from the ERP system.",
+            "properties": {
+                "date": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "order": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "item": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "height": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "width": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "depth": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "box": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": [
+                "date",
+                "order",
+                "item",
+                "height",
+                "width",
+                "depth",
+                "box"
+            ],
+            "additionalProperties": false
+        },
+        "operator_order_lists": {
+            "type": "array",
+            "description": "List of orders assigned to each operator.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "operator": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Operator ID."
+                    },
+                    "orders": {
+                        "type": "array",
+                        "description": "List of orders assigned to the operator.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer",
+                                    "description": "Order ID."
+                                },
+                                "box": {
+                                    "type": "string",
+                                    "description": "Box type defined in the order."
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "box"
+                            ],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": [
+                    "operator",
+                    "orders"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "solver": {
+            "type": "object",
+            "description": "Metadata and statistics from the scheduler.",
+            "properties": {
+                "objective_value": {
+                    "type": "number",
+                    "description": "Final objective value achieved by the solver."
+                },
+                "best_objective_bound": {
+                    "type": "number",
+                    "description": "Best bound for the objective value."
+                },
+                "user_time": {
+                    "type": "number",
+                    "description": "Total time taken by the solver to compute the solution (in seconds)."
+                }
+            },
+            "required": [
+                "objective_value",
+                "best_objective_bound",
+                "user_time"
+            ],
+            "additionalProperties": false
+        }
+    },
+    "required": [
+        "is_solution_optimal",
+        "drawer_box_mapping",
+        "replenishments",
+        "box_constructions",
+        "orders",
+        "operator_order_lists",
+        "solver"
+    ],
+    "additionalProperties": false
+}
