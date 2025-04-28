@@ -1,3 +1,4 @@
+import json
 import requests
 
 
@@ -5,7 +6,7 @@ url = "http://0.0.0.0:5000/schedule"
 
 instance = "instances/instance.json"
 with open(instance, "r") as f:
-    instance = f.read()
+    instance = json.load(f)
 
 response = requests.post(url, params={"time_limit": 40}, json=instance)
 

@@ -1,4 +1,5 @@
 import logging
+import json
 from flask import Flask, request, Response
 from manufacturing import (
     ManufacturingProblemData,
@@ -22,10 +23,10 @@ def schedule():
 
         with open("configuration.json") as f:
             configuration: ManufacturingConfiguration = (
-                ManufacturingConfiguration.from_json(f.read())
+                ManufacturingConfiguration.from_dict(json.load(f))
             )
 
-        problem_data: ManufacturingProblemData = ManufacturingProblemData.from_json(
+        problem_data: ManufacturingProblemData = ManufacturingProblemData.from_dict(
             request.json
         )
 
