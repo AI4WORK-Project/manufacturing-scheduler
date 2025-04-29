@@ -1,4 +1,4 @@
-from manufacturing import ManufacturingSchedulingFactory, ManufacturingSolution
+from manufacturing import ManufacturingInstance, ManufacturingSolution
 
 from typing import Dict, List
 import matplotlib.pyplot as plt
@@ -15,17 +15,9 @@ def get_cmap(num_colors) -> List:
     return colors[:num_colors]
 
 
-def get_drawer_capacity(
-    factory: ManufacturingSchedulingFactory,
-    drawer_box_mapping: Dict[int, str],
-    drawer: int,
-) -> int:
-    box = drawer_box_mapping[drawer]
-    return factory.drawer_capacities[factory.boxes.index(box)]
-
-
 def plot_solution(
-    factory: ManufacturingSchedulingFactory, solution: ManufacturingSolution
+    instance: ManufacturingInstance,
+    solution: ManufacturingSolution,
 ) -> None:
     """Plots the resulting schedule."""
 
@@ -35,8 +27,7 @@ def plot_solution(
     ax.set_xticks(
         range(
             0,
-            len(solution.box_constructions) * factory.instance.box_construction_duration
-            + 5,
+            len(solution.box_constructions) * instance.box_construction_duration + 5,
             5,
         )
     )
@@ -44,31 +35,30 @@ def plot_solution(
     ax.grid(True)
     ax.set_axisbelow(True)
 
-    colors = get_cmap(factory.num_drawers)
-    drawer_to_index = dict(
-        (drawer, idx) for idx, drawer in enumerate(factory.instance.drawers)
-    )
+    colors = get_cmap(len(instance.drawers))
+    drawer_to_index = dict((drawer, idx) for idx, drawer in enumerate(instance.drawers))
     drawer_box_mapping = {
         drawer_to_index[drawer.drawer]: drawer.box
         for drawer in solution.drawer_box_mapping
     }
+    drawer_capacities = {dc.box: dc.capacity for dc in instance.drawer_capacities}
 
-    remaining_boxes = [[] for drawer in range(factory.num_drawers)]
+    remaining_boxes = [[] for drawer in range(len(instance.drawers))]
     for i, drawer in enumerate(solution.box_constructions):
         drawer_idx = drawer_to_index[drawer]
-        box_construction_start = i * factory.instance.box_construction_duration
+        box_construction_start = i * instance.box_construction_duration
         ax.broken_barh(
             [
                 (
                     box_construction_start,
-                    factory.instance.box_construction_duration - 0.1,
+                    instance.box_construction_duration - 0.1,
                 )
             ],
             (4, 2),
             facecolors=(colors[drawer_idx]),
         )
         ax.text(
-            x=box_construction_start + factory.instance.box_construction_duration / 2,
+            x=box_construction_start + instance.box_construction_duration / 2,
             y=5,
             s=f"b{drawer_box_mapping[drawer_idx]},d{drawer}",
             ha="center",
@@ -80,11 +70,11 @@ def plot_solution(
                 box_construction_start,
                 -1,
                 box_construction_start,
-                box_construction_start + factory.instance.box_construction_duration,
+                box_construction_start + instance.box_construction_duration,
             )
         )
 
-    for i, replenish_window in enumerate(factory.instance.replenish_windows):
+    for i, replenish_window in enumerate(instance.replenish_windows):
         start_window, end_window = replenish_window.start, replenish_window.end
         ax.vlines(
             x=[start_window, end_window],
@@ -97,25 +87,25 @@ def plot_solution(
 
     for replenishment in solution.replenishments:
         ax.broken_barh(
-            [(replenishment.start, factory.instance.replenish_duration)],
+            [(replenishment.start, instance.replenish_duration)],
             (0, 2),
             facecolors=(colors[drawer_to_index[replenishment.drawer]]),
         )
-        replenishment_end = replenishment.start + factory.instance.replenish_duration
+        replenishment_end = replenishment.start + instance.replenish_duration
         remaining_boxes[drawer_to_index[replenishment.drawer]].append(
             (
                 replenishment_end,
-                get_drawer_capacity(
-                    factory, drawer_box_mapping, drawer_to_index[replenishment.drawer]
-                ),
+                drawer_capacities[
+                    drawer_box_mapping[drawer_to_index[replenishment.drawer]]
+                ],
                 replenishment.start,
                 replenishment_end,
             )
         )
 
-    for drawer_idx in range(factory.num_drawers):
+    for drawer_idx in range(len(instance.drawers)):
         remaining_boxes[drawer_idx].sort(key=lambda e: e[2])
-        boxes = get_drawer_capacity(factory, drawer_box_mapping, drawer_idx)
+        boxes = drawer_capacities[drawer_box_mapping[drawer_idx]]
         for t, inc, start_activity, end_activity in remaining_boxes[drawer_idx]:
             if inc > 0:
                 boxes = inc

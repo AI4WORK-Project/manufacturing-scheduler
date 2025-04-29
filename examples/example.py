@@ -52,7 +52,7 @@ def main():
         with open("instances/instance_solution.json", "w") as f:
             f.write(solution.to_json())
 
-        plot_solution(factory, solution)
+        plot_solution(instance, solution)
 
 
 if __name__ == "__main__":

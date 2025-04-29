@@ -11,4 +11,5 @@ with open(instance, "r") as f:
 response = requests.post(url, params={"time_limit": 40}, json=instance)
 
 print("Status Code:", response.status_code)
-print("Response JSON:", response.json())
+if response.ok:
+    print("Response JSON:", response.json())
