@@ -8,12 +8,16 @@ from manufacturing import (
 )
 from manufacturing.dataclasses.instance import OperatorOrderList
 from manufacturing.dataclasses.instance import Order
+import pathlib
+import os
 from typing import List
 
 
 def main():
-    configuration_data = "../configuration.json"
-    problem_data = "instances/instance.json"
+    examples_path = pathlib.Path(__file__).parent.resolve()
+    configuration_data = os.path.join(examples_path, "../configuration.json")
+    problem_data = os.path.join(examples_path, "instances/instance.json")
+    solution_data = os.path.join(examples_path, "instances/instance_solution.json")
 
     with open(configuration_data) as f:
         configuration: ManufacturingConfiguration = (
@@ -49,7 +53,7 @@ def main():
 
     solution: ManufacturingSolution = factory.get_solution()
     if solution is not None:
-        with open("instances/instance_solution.json", "w") as f:
+        with open(solution_data, "w") as f:
             f.write(solution.to_json())
 
         plot_solution(instance, solution)

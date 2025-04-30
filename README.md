@@ -51,8 +51,7 @@ See [instance_solution.json](examples/instances/instance_solution.json) and [ins
 To test the API, you can run the `client_example.py` script:
 
 ```sh
-cd examples/
-python client_example.py
+python examples/client_example.py
 ```
 
 This script sends a request to the running server and prints the response.

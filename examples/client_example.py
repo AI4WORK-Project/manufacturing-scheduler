@@ -1,10 +1,13 @@
 import json
 import requests
+import pathlib
+import os
 
 
 url = "http://0.0.0.0:5000/schedule"
 
-instance = "instances/instance.json"
+examples_path = pathlib.Path(__file__).parent.resolve()
+instance = os.path.join(examples_path, "instances/instance.json")
 with open(instance, "r") as f:
     instance = json.load(f)
 

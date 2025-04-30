@@ -24,13 +24,6 @@ def plot_solution(
     fig, ax = plt.subplots()
     ax.set_xlabel("Time")
     ax.set_ylabel("Machine")
-    ax.set_xticks(
-        range(
-            0,
-            len(solution.box_constructions) * instance.box_construction_duration + 5,
-            5,
-        )
-    )
     ax.set_ylim(bottom=-30, top=30)
     ax.grid(True)
     ax.set_axisbelow(True)
@@ -60,7 +53,7 @@ def plot_solution(
         ax.text(
             x=box_construction_start + instance.box_construction_duration / 2,
             y=5,
-            s=f"b{drawer_box_mapping[drawer_idx]},d{drawer}",
+            s=f"{drawer_box_mapping[drawer_idx]}{drawer}",
             ha="center",
             va="center",
             color="black",
@@ -90,6 +83,14 @@ def plot_solution(
             [(replenishment.start, instance.replenish_duration)],
             (0, 2),
             facecolors=(colors[drawer_to_index[replenishment.drawer]]),
+        )
+        ax.text(
+            x=replenishment.start + instance.replenish_duration / 2,
+            y=1,
+            s=f"{drawer_box_mapping[drawer_to_index[replenishment.drawer]]}{replenishment.drawer}",
+            ha="center",
+            va="center",
+            color="black",
         )
         replenishment_end = replenishment.start + instance.replenish_duration
         remaining_boxes[drawer_to_index[replenishment.drawer]].append(

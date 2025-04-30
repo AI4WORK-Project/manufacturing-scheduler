@@ -9,13 +9,16 @@ from manufacturing.dataclasses.instance import OperatorOrderList
 from manufacturing.dataclasses.instance import Order
 import json
 import requests
+import pathlib
+import os
 from typing import List
 
 
 def main():
     url = "http://0.0.0.0:5000/schedule"
-    configuration_data = "../configuration.json"
-    problem_data = "instances/instance.json"
+    examples_path = pathlib.Path(__file__).parent.resolve()
+    configuration_data = os.path.join(examples_path, "../configuration.json")
+    problem_data = os.path.join(examples_path, "instances/instance.json")
 
     with open(problem_data) as f:
         problem_data_json = json.load(f)
