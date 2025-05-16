@@ -23,7 +23,7 @@ def plot_solution(
 
     fig, ax = plt.subplots()
     ax.set_xlabel("Time")
-    ax.set_ylabel("Machine")
+    # ax.set_ylabel("Machine")
     ax.set_ylim(bottom=-30, top=30)
     ax.grid(True)
     ax.set_axisbelow(True)

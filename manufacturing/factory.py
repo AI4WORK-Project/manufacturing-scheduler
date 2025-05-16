@@ -1,4 +1,3 @@
-import manufacturing
 from manufacturing import ManufacturingInstance, ManufacturingSolution
 
 import collections
