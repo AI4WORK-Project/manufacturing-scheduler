@@ -113,12 +113,12 @@ def are_overlapped(activities: List[Tuple[int, int]]):
 
 @pytest.mark.parametrize("instance", [1, 2, 3, 4, 5, 6, 7])
 def test_instance(instance: int):
-    instance, solution = solve_instance(0)
+    instance, solution = solve_instance(0, time_limit=60)
     validate_replenishments(instance, solution)
 
 
 def test_instance0():
-    instance, solution = solve_instance(0, time_limit=60)
+    instance, solution = solve_instance(0)
 
     assert len(solution.replenishments) == 12
     validate_replenishments(instance, solution)
