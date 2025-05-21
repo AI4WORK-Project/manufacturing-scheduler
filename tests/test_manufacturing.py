@@ -8,11 +8,12 @@ from manufacturing import (
 from manufacturing.dataclasses.instance import OperatorOrderList, Order
 import pathlib
 import os
-from typing import Tuple, List
+from typing import Tuple, List, Optional
+import pytest
 
 
 def solve_instance(
-    instance: int,
+    instance: int, time_limit: Optional[int] = None
 ) -> Tuple[ManufacturingInstance, ManufacturingSolution]:
     tests_path = pathlib.Path(__file__).parent.resolve()
     configuration_data = os.path.join(tests_path, "../configuration.json")
@@ -64,19 +65,19 @@ def validate_replenishments(
     }
     drawer_capacities = {dc.box: dc.capacity for dc in instance.drawer_capacities}
 
-    activities = [[] for _ in range(len(instance.drawers))]
+    drawer_activities = [[] for _ in range(len(instance.drawers))]
     for i, drawer in enumerate(solution.box_constructions):
         drawer_idx = drawer_to_index[drawer]
         box_construction_start = i * instance.box_construction_duration
         box_construction_end = (
             box_construction_start + instance.box_construction_duration
         )
-        activities[drawer_idx].append(
+        drawer_activities[drawer_idx].append(
             (box_construction_start, box_construction_end, -1)
         )
 
     for replenishment in solution.replenishments:
-        activities[drawer_to_index[replenishment.drawer]].append(
+        drawer_activities[drawer_to_index[replenishment.drawer]].append(
             (
                 replenishment.start,
                 replenishment.start + instance.replenish_duration,
@@ -87,16 +88,19 @@ def validate_replenishments(
         )
 
     for drawer_idx in range(len(instance.drawers)):
-        activities[drawer_idx].sort(key=lambda e: e[0])
+        drawer_activities[drawer_idx].sort(key=lambda e: e[0])
         boxes = drawer_capacities[drawer_box_mapping[drawer_idx]]
-        for start, end, inc in activities[drawer_idx]:
+        for start, end, inc in drawer_activities[drawer_idx]:
             if inc > 0:
                 boxes = inc
             else:
                 boxes += inc
                 assert boxes >= 0
 
-        assert not are_overlapped([(a[0], a[1]) for a in activities[drawer_idx]])
+    for drawer_idx in range(len(instance.drawers)):
+        assert not are_overlapped(
+            [(start, end) for start, end, _ in drawer_activities[drawer_idx]]
+        )
 
 
 def are_overlapped(activities: List[Tuple[int, int]]):
@@ -107,8 +111,14 @@ def are_overlapped(activities: List[Tuple[int, int]]):
     return False
 
 
-def test_instance0():
+@pytest.mark.parametrize("instance", [1, 2, 3, 4, 5, 6, 7])
+def test_instance(instance: int):
     instance, solution = solve_instance(0)
+    validate_replenishments(instance, solution)
+
+
+def test_instance0():
+    instance, solution = solve_instance(0, time_limit=60)
 
     assert len(solution.replenishments) == 12
     validate_replenishments(instance, solution)
