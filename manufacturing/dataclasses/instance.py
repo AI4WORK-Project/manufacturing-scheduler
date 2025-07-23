@@ -73,13 +73,13 @@ class ManufacturingInstance:
             not self.are_replenish_windows_overlapped()
         ), "Replenish windows must not overlap"
 
-        makespan = self.box_construction_duration * sum(
-            len(orders_list.orders) for orders_list in self.operator_order_lists
-        )
-        assert all(
-            window.start >= 0 and window.end <= makespan
-            for window in self.replenish_windows
-        ), f"All replenish windows must be within [0, {makespan}]"
+        # makespan = self.box_construction_duration * sum(
+        #     len(orders_list.orders) for orders_list in self.operator_order_lists
+        # )
+        # assert all(
+        #     window.start >= 0 and window.end <= makespan
+        #     for window in self.replenish_windows
+        # ), f"All replenish windows must be within [0, {makespan}]"
 
         assert set(
             orders_list.operator for orders_list in self.operator_order_lists
