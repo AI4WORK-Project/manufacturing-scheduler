@@ -103,10 +103,10 @@ class ManufacturingInstance:
             for order in operator_list.orders
         )
 
-        assert boxes == set(
-            c.box for c in self.drawer_capacities
-        ), "Mismatch between the boxes in `drawer_capacities` and those referenced in orders."
+        assert boxes.issubset(
+            set(c.box for c in self.drawer_capacities)
+        ), "Some boxes referenced in orders are not present in `drawer_capacities`. All boxes in orders must exist in `drawer_capacities`."
 
-        assert boxes == set(
-            duration.box for duration in self.box_filling_durations
-        ), "Mismatch between the boxes in `drawer_capacities` and those referenced in orders."
+        assert boxes.issubset(
+            set(duration.box for duration in self.box_filling_durations)
+        ), "Some boxes referenced in orders are not present in `box_filling_durations`. All boxes in orders must exist in `box_filling_durations`."
