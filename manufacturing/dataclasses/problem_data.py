@@ -1,6 +1,17 @@
-from dataclasses import dataclass
-from dataclasses_json import dataclass_json
+from dataclasses import dataclass, field
+from dataclasses_json import dataclass_json, config
+from datetime import time, datetime
 from typing import List
+
+
+def parse_time_string(time_str: str) -> time:
+    """Parse a time string like 'HH:MM:SS' into a datetime object with today's date."""
+    return datetime.strptime(time_str, "%H:%M:%S").time()
+
+
+def time_to_string(dt: time) -> str:
+    """Convert a datetime.time object to a time string like HH:MM:SS."""
+    return dt.strftime("%H:%M:%S")
 
 
 @dataclass_json
@@ -34,6 +45,9 @@ class OrdersTable:
 @dataclass_json
 @dataclass
 class ManufacturingProblemData:
+    start_time: time = field(
+        metadata=config(encoder=time_to_string, decoder=parse_time_string)
+    )
     drawers: List[int]
     replenish_windows: List[ReplenishWindow]
     orders: OrdersTable

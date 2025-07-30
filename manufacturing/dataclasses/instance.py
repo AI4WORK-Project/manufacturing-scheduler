@@ -1,9 +1,14 @@
-from dataclasses import dataclass
-from dataclasses_json import dataclass_json
+from dataclasses import dataclass, field
+from dataclasses_json import dataclass_json, config
 from typing import List
+from datetime import time
 from manufacturing.dataclasses.configuration import DrawerCapacity, BoxFillingDuration
-from manufacturing.dataclasses.problem_data import ReplenishWindow
-from manufacturing.dataclasses.problem_data import OrdersTable
+from manufacturing.dataclasses.problem_data import (
+    ReplenishWindow,
+    OrdersTable,
+    parse_time_string,
+    time_to_string,
+)
 
 
 @dataclass_json
@@ -23,6 +28,9 @@ class OperatorOrderList:
 @dataclass_json
 @dataclass
 class ManufacturingInstance:
+    start_time: time = field(
+        metadata=config(encoder=time_to_string, decoder=parse_time_string)
+    )
     operators: int
     drawers: List[int]
     drawer_capacities: List[DrawerCapacity]

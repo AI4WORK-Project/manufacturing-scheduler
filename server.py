@@ -1,25 +1,34 @@
+import os
 import logging
 import json
-from flask import Flask, request, Response
+import pathlib
+from flask import Flask, Response, request, send_file
 from manufacturing import (
     ManufacturingProblemData,
     ManufacturingConfiguration,
     ManufacturingInstance,
     ManufacturingSchedulingFactory,
+    plot_solution,
 )
-from manufacturing.dataclasses.instance import Order
-from manufacturing.dataclasses.instance import OperatorOrderList
+from manufacturing.dataclasses.instance import Order, OperatorOrderList
 from typing import List
 
 logging.basicConfig(level=logging.INFO)
 
 app = Flask("Manufacturing-API")
 
+plot_img_path = os.path.join(
+    pathlib.Path(__file__).parent.resolve(), "saved_plots", "plot.png"
+)
+plot_html_path = os.path.join(
+    pathlib.Path(__file__).parent.resolve(), "saved_plots", "plot.html"
+)
+
 
 @app.route("/schedule", methods=["POST"])
 def schedule():
     try:
-        logging.info("Request received!")
+        logging.info("Schedule request received!")
 
         with open("configuration.json") as f:
             configuration: ManufacturingConfiguration = (
@@ -40,6 +49,7 @@ def schedule():
             )
 
         instance: ManufacturingInstance = ManufacturingInstance(
+            start_time=problem_data.start_time,
             operators=configuration.operators,
             drawers=problem_data.drawers,
             drawer_capacities=configuration.drawer_capacities,
@@ -59,6 +69,9 @@ def schedule():
         solution = factory.get_solution(time_limit=time_limit)
         if solution is not None:
             logging.info(f"Solution found")
+            plot_solution(
+                instance, solution, image_path=plot_img_path, html_path=plot_html_path
+            )
         else:
             logging.info("No solution has been found for the given problem")
             return Response(
@@ -73,6 +86,30 @@ def schedule():
         )
 
     return Response(solution.to_json(), mimetype="application/json", status=200)
+
+
+# @app.route("/last_schedule_plot_image", methods=["GET"])
+# def last_schedule_plot_image():
+#     logging.info("Received request for the last generated schedule plot image.")
+#     if not os.path.exists(plot_img_path):
+#         return Response(
+#             '{"message":"Plot image not found"}',
+#             mimetype="application/json",
+#             status=404,
+#         )
+#     return send_file(plot_img_path, mimetype="image/png")
+
+
+@app.route("/last_schedule_gantt", methods=["GET"])
+def last_schedule_gantt():
+    logging.info("Received request for the last generated schedule plot html.")
+    if not os.path.exists(plot_html_path):
+        return Response(
+            '{"message":"Plot html not found"}',
+            mimetype="application/json",
+            status=404,
+        )
+    return send_file(plot_html_path, mimetype="text/html")
 
 
 if __name__ == "__main__":

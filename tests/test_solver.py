@@ -38,6 +38,7 @@ def solve_instance(
         )
 
     instance: ManufacturingInstance = ManufacturingInstance(
+        start_time=problem_data.start_time,
         operators=configuration.operators,
         drawers=problem_data.drawers,
         drawer_capacities=configuration.drawer_capacities,

@@ -5,8 +5,7 @@ from manufacturing import (
     ManufacturingSolution,
     plot_solution,
 )
-from manufacturing.dataclasses.instance import OperatorOrderList
-from manufacturing.dataclasses.instance import Order
+from manufacturing.dataclasses.instance import Order, OperatorOrderList
 import json
 import requests
 import pathlib
@@ -40,6 +39,7 @@ def main():
         )
 
     instance: ManufacturingInstance = ManufacturingInstance(
+        start_time=problem_data.start_time,
         operators=configuration.operators,
         drawers=problem_data.drawers,
         drawer_capacities=configuration.drawer_capacities,

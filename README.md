@@ -47,6 +47,14 @@ See [instance_solution.json](examples/instances/instance_solution.json) and [ins
 
 - **Error (500)**: If an internal server error occurs, an error message will be returned.
 
+### GET `/last_schedule_gantt`
+
+This endpoint returns the Gantt chart visualization of the last computed schedule as an HTML file.
+
+#### Response
+- **Success (200)**: Returns an HTML Gantt chart that can be viewed in a browser.
+- **Error (404)**: If no schedule has been computed yet or the plot file is not found.
+
 ## Running an example
 To test the API, you can run the `client_example.py` script:
 
@@ -60,3 +68,9 @@ Alternatively, you can use `curl`:
 ```sh
 curl -X POST --json @examples/instances/instance.json "http://0.0.0.0:5000/schedule?time_limit=60"
 ```
+
+To view the Gantt chart visualization after computing a schedule:
+```sh
+curl "http://0.0.0.0:5000/last_schedule_gantt" > schedule.html
+```
+Then open `schedule.html` in your web browser.

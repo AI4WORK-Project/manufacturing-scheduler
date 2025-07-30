@@ -1,34 +1,38 @@
 from manufacturing import ManufacturingInstance, ManufacturingSolution
-
-from typing import Dict, List
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
+from typing import List, Optional
+import plotly.graph_objects as go
+import plotly.colors as colors
+from datetime import datetime, timedelta
 
 
 def get_cmap(num_colors) -> List:
-    colors = list(mcolors.TABLEAU_COLORS.values())
-    remaining_colors = num_colors - len(colors)
-    if remaining_colors > 0:
-        cmap = plt.cm.get_cmap("hsv", remaining_colors + 1)
-        colors += [cmap(i) for i in range(remaining_colors)]
-        return colors
-    return colors[:num_colors]
+    # Use plotly's qualitative color palette
+    if num_colors <= len(colors.qualitative.Plotly):
+        return colors.qualitative.Plotly[:num_colors]
+    else:
+        # Generate additional colors using plotly's sample_colorscale
+        base_colors = colors.qualitative.Plotly
+        additional_colors = colors.sample_colorscale(
+            "hsv",
+            [
+                i / (num_colors - len(base_colors))
+                for i in range(num_colors - len(base_colors))
+            ],
+        )
+        return base_colors + additional_colors
 
 
 def plot_solution(
     instance: ManufacturingInstance,
     solution: ManufacturingSolution,
+    image_path: Optional[str] = None,
+    html_path: Optional[str] = None,
 ) -> None:
     """Plots the resulting schedule."""
 
-    fig, ax = plt.subplots()
-    ax.set_xlabel("Time")
-    # ax.set_ylabel("Machine")
-    ax.set_ylim(bottom=-30, top=30)
-    ax.grid(True)
-    ax.set_axisbelow(True)
+    fig = go.Figure()
 
-    colors = get_cmap(len(instance.drawers))
+    color_palette = get_cmap(len(instance.drawers))
     drawer_to_index = dict((drawer, idx) for idx, drawer in enumerate(instance.drawers))
     drawer_box_mapping = {
         drawer_to_index[drawer.drawer]: drawer.box
@@ -37,27 +41,41 @@ def plot_solution(
     drawer_capacities = {dc.box: dc.capacity for dc in instance.drawer_capacities}
 
     remaining_boxes = [[] for drawer in range(len(instance.drawers))]
+
+    # Add box constructions
     for i, drawer in enumerate(solution.box_constructions):
         drawer_idx = drawer_to_index[drawer]
         box_construction_start = i * instance.box_construction_duration
-        ax.broken_barh(
-            [
-                (
-                    box_construction_start,
-                    instance.box_construction_duration - 0.1,
-                )
-            ],
-            (4, 2),
-            facecolors=(colors[drawer_idx]),
-        )
-        ax.text(
-            x=box_construction_start + instance.box_construction_duration / 2,
-            y=5,
-            s=f"{drawer_box_mapping[drawer_idx]}{drawer}",
-            ha="center",
-            va="center",
-            color="black",
-        )
+
+        # # Add box construction bar
+        # fig.add_trace(
+        #     go.Scatter(
+        #         x=[
+        #             box_construction_start,
+        #             box_construction_start + instance.box_construction_duration,
+        #             box_construction_start + instance.box_construction_duration,
+        #             box_construction_start,
+        #             box_construction_start,
+        #         ],
+        #         y=[4, 4, 6, 6, 4],
+        #         fill="toself",
+        #         fillcolor=color_palette[drawer_idx],
+        #         line=dict(color=color_palette[drawer_idx]),
+        #         mode="lines",
+        #         name=f"Construction [Box {drawer_box_mapping[drawer_idx]}, Drawer {drawer}]",
+        #         showlegend=False,
+        #     )
+        # )
+
+        # # Add text annotation
+        # fig.add_annotation(
+        #     x=box_construction_start + instance.box_construction_duration / 2,
+        #     y=5,
+        #     text=f"{drawer_box_mapping[drawer_idx]}{drawer}",
+        #     showarrow=False,
+        #     font=dict(color="black"),
+        # )
+
         remaining_boxes[drawer_idx].append(
             (
                 box_construction_start,
@@ -67,62 +85,121 @@ def plot_solution(
             )
         )
 
+    # Add replenish windows
     for i, replenish_window in enumerate(instance.replenish_windows):
         start_window, end_window = replenish_window.start, replenish_window.end
-        ax.vlines(
-            x=[start_window, end_window],
-            ymin=-30,
-            ymax=30,
-            colors=colors[i % len(colors)],
-            ls="dashed",
-            lw=1.5,
+
+        # Add vertical lines for windows
+        fig.add_vline(
+            x=start_window,
+            line=dict(
+                color=color_palette[i % len(color_palette)], dash="dash", width=1.5
+            ),
+        )
+        fig.add_vline(
+            x=end_window,
+            line=dict(
+                color=color_palette[i % len(color_palette)], dash="dash", width=1.5
+            ),
         )
 
+    # Add replenishments
     for replenishment in solution.replenishments:
-        ax.broken_barh(
-            [(replenishment.start, instance.replenish_duration)],
-            (0, 2),
-            facecolors=(colors[drawer_to_index[replenishment.drawer]]),
+        drawer_idx = drawer_to_index[replenishment.drawer]
+
+        # Add replenishment bar
+        fig.add_trace(
+            go.Scatter(
+                x=[
+                    replenishment.start,
+                    replenishment.start + instance.replenish_duration,
+                    replenishment.start + instance.replenish_duration,
+                    replenishment.start,
+                    replenishment.start,
+                ],
+                y=[0, 0, 2, 2, 0],
+                fill="toself",
+                fillcolor=color_palette[drawer_idx],
+                line=dict(color=color_palette[drawer_idx]),
+                mode="lines",
+                name=f"Replenishment [Box {drawer_box_mapping[drawer_idx]}, Drawer {replenishment.drawer}]",
+                showlegend=False,
+            )
         )
-        ax.text(
+
+        # Add text annotation
+        fig.add_annotation(
             x=replenishment.start + instance.replenish_duration / 2,
             y=1,
-            s=f"{drawer_box_mapping[drawer_to_index[replenishment.drawer]]}{replenishment.drawer}",
-            ha="center",
-            va="center",
-            color="black",
+            text=f"{drawer_box_mapping[drawer_idx]}{replenishment.drawer}",
+            showarrow=False,
+            font=dict(color="black"),
         )
+
         replenishment_end = replenishment.start + instance.replenish_duration
-        remaining_boxes[drawer_to_index[replenishment.drawer]].append(
+        remaining_boxes[drawer_idx].append(
             (
                 replenishment_end,
-                drawer_capacities[
-                    drawer_box_mapping[drawer_to_index[replenishment.drawer]]
-                ],
+                drawer_capacities[drawer_box_mapping[drawer_idx]],
                 replenishment.start,
                 replenishment_end,
             )
         )
 
-    for drawer_idx in range(len(instance.drawers)):
-        remaining_boxes[drawer_idx].sort(key=lambda e: e[2])
-        boxes = drawer_capacities[drawer_box_mapping[drawer_idx]]
-        for t, inc, start_activity, end_activity in remaining_boxes[drawer_idx]:
-            if inc > 0:
-                boxes = inc
-                y = -1
-            else:
-                boxes += inc
-                y = 3
-            assert boxes >= 0
+    # # Add remaining boxes text
+    # for drawer_idx in range(len(instance.drawers)):
+    #     remaining_boxes[drawer_idx].sort(key=lambda e: e[2])
+    #     boxes = drawer_capacities[drawer_box_mapping[drawer_idx]]
+    #     for t, inc, start_activity, end_activity in remaining_boxes[drawer_idx]:
+    #         if inc > 0:
+    #             boxes = inc
+    #             y = -1
+    #         else:
+    #             boxes += inc
+    #             y = 3
+    #         assert boxes >= 0
 
-            ax.text(
-                x=(start_activity + end_activity) / 2,
-                y=y,
-                s=str(boxes),
-                ha="center",
-                va="center",
-                color="black",
-            )
+    #         fig.add_annotation(
+    #             x=(start_activity + end_activity) / 2,
+    #             y=y,
+    #             text=str(boxes),
+    #             showarrow=False,
+    #             font=dict(color="black"),
+    #         )
 
-    plt.show()
+    # Generate tick values every tick interval
+    max_time = len(solution.box_constructions) * instance.box_construction_duration
+    tick_interval = 60  # interval in seconds
+    tick_vals = list(range(0, int(max_time) + tick_interval, tick_interval))
+
+    # Convert elapsed seconds to actual clock times based on instance.start_time
+    start_datetime = datetime.combine(datetime.today().date(), instance.start_time)
+    tick_text = [
+        (start_datetime + timedelta(seconds=t)).strftime("%H:%M:%S") for t in tick_vals
+    ]
+
+    # Update layout
+    fig.update_layout(
+        # title="Manufacturing Schedule",
+        xaxis_title="Time",
+        xaxis=dict(
+            tickmode="array",
+            tickvals=tick_vals,
+            ticktext=tick_text,
+        ),
+        yaxis=dict(range=[-4, 6], visible=False),
+        showlegend=False,
+        width=1200,
+        height=600,
+        plot_bgcolor="white",
+    )
+
+    # Add grid
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="lightgray")
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor="lightgray")
+
+    if image_path is None and html_path is None:
+        fig.show()
+    else:
+        fig.write_image(image_path, width=1200, height=600, scale=4)
+        fig.write_html(html_path, include_plotlyjs="cdn")

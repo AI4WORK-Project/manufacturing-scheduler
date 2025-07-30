@@ -6,8 +6,7 @@ from manufacturing import (
     ManufacturingSchedulingFactory,
     plot_solution,
 )
-from manufacturing.dataclasses.instance import OperatorOrderList
-from manufacturing.dataclasses.instance import Order
+from manufacturing.dataclasses.instance import Order, OperatorOrderList
 import pathlib
 import os
 from typing import List
@@ -38,6 +37,7 @@ def main():
         )
 
     instance: ManufacturingInstance = ManufacturingInstance(
+        start_time=problem_data.start_time,
         operators=configuration.operators,
         drawers=problem_data.drawers,
         drawer_capacities=configuration.drawer_capacities,

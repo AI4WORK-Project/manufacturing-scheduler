@@ -1,4 +1,6 @@
 {
+    // Start time in HH:MM:SS format (24-hour format)
+    "start_time": "08:30:00",
     // List of available drawers. If a drawer is not listed here, it is not available for use.
     // In this example, drawers 0, 7, and 10 are not available.
     "drawers": [
