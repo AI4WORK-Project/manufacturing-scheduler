@@ -42,13 +42,13 @@ class ManufacturingInstance:
     operator_order_lists: List[OperatorOrderList]
 
     def __post_init__(self):
+        self.replenish_windows.sort(key=lambda window: window.start)
         self.validate()
 
     def are_replenish_windows_overlapped(self):
-        windows = sorted(self.replenish_windows, key=lambda window: window.start)
-        for i in range(len(windows) - 1):
-            w = windows[i]
-            w_next = windows[i + 1]
+        for i in range(len(self.replenish_windows) - 1):
+            w = self.replenish_windows[i]
+            w_next = self.replenish_windows[i + 1]
             if w.end > w_next.start:
                 return True
         return False

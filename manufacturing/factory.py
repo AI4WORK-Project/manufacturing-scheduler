@@ -5,6 +5,7 @@ from typing import List, Tuple, Dict, Any, Optional
 from ortools.sat.python import cp_model
 
 from manufacturing.dataclasses import solution
+from datetime import datetime
 
 
 order_type = collections.namedtuple(
@@ -24,11 +25,14 @@ class ManufacturingSchedulingFactory:
         self.orders = self.get_machine_order_list()
         self.makespan = self.instance.box_construction_duration * len(self.orders)
         self.boxes: List[str] = sorted(list(set(order.box for order in self.orders)))
+        self.max_drawers_per_box = self.num_drawers - len(self.boxes) + 1
 
         drawer_capacities = {
             dc.box: dc.capacity for dc in self.instance.drawer_capacities
         }
         self.drawer_capacities = [drawer_capacities[box] for box in self.boxes]
+
+        self.count_used_drawer_cache = {}
 
         (
             self.model,
@@ -134,6 +138,20 @@ class ManufacturingSchedulingFactory:
                 end_ub = next_tp(end_ub)
                 start_lb = end_lb - self.instance.replenish_duration + 1
 
+    def replenishment_intervals_in_window2(self, window: Tuple[int, int]):
+        """
+        Yields all time intervals within the specified window during which replenishment
+        can be performed.
+        """
+
+        start_window, end_window = window
+        for start in range(
+            start_window,
+            end_window + 1 - self.instance.replenish_duration,
+            self.instance.box_construction_duration,
+        ):
+            yield start, start + self.instance.replenish_duration
+
     def count_used_drawer(
         self,
         drawer: int,
@@ -143,15 +161,23 @@ class ManufacturingSchedulingFactory:
     ):
         """Counts the number of times a specified drawer is used within a given time interval."""
 
-        t = 0
-        used_drawer_vars = []
-        for i, order in enumerate(self.orders):
-            if t >= start and t < end:
-                used_drawer_vars.append(order_uses_drawer_vars[i][drawer])
+        cache_key = (drawer, start, end)
+        if cache_key in self.count_used_drawer_cache:
+            return self.count_used_drawer_cache[cache_key]
 
-            t += self.instance.box_construction_duration
+        start_idx = start // self.instance.box_construction_duration
+        if start % self.instance.box_construction_duration != 0:
+            start_idx += 1
 
-        return sum(used_drawer_vars)
+        end_idx = end // self.instance.box_construction_duration
+        if end % self.instance.box_construction_duration == 0:
+            end_idx -= 1
+
+        self.count_used_drawer_cache[cache_key] = sum(
+            order_uses_drawer[drawer]
+            for order_uses_drawer in order_uses_drawer_vars[start_idx : end_idx + 1]
+        )
+        return self.count_used_drawer_cache[cache_key]
 
     def orders_within_time_window(
         self, window: Tuple[int, int]
@@ -161,18 +187,13 @@ class ManufacturingSchedulingFactory:
         box type within the time window.
         """
 
-        orders = []
         start_window, end_window = window
-        for i, order in enumerate(self.orders):
-            activity_start = i * self.instance.box_construction_duration
-            activity_end = (i + 1) * self.instance.box_construction_duration
+        start_idx = start_window // self.instance.box_construction_duration
+        end_idx = end_window // self.instance.box_construction_duration
+        if end_window % self.instance.box_construction_duration == 0:
+            end_idx -= 1
 
-            if (activity_start <= start_window < activity_end) or (
-                start_window <= activity_start < end_window
-            ):
-                orders.append((i, order))
-
-        return orders
+        return [(i, self.orders[i]) for i in range(start_idx, end_idx + 1)]
 
     def add_quality_metric(
         self,
@@ -221,10 +242,24 @@ class ManufacturingSchedulingFactory:
             # enforce each drawer contains exactly one box
             model.add_exactly_one(drawer_contains_box_vars[-1])
 
+        # TODO
+        # for drawer in range(self.num_drawers):
+        #     for i in range(drawer + 1, len(self.boxes)):
+        #         model.add_bool_and(drawer_contains_box_vars[drawer][i].negated())
+
+        # enforce max drawers per box
+        print("self.max_drawers_per_box", self.max_drawers_per_box)
+        for i in range(len(self.boxes)):
+            model.add(
+                sum(drawer_contains_box_vars[d][i] for d in range(self.num_drawers))
+                <= self.max_drawers_per_box
+            )
+
         # enforce an ordering of the boxes assigned to drawers to reduce
         # the number of equivalent solutions
-        for drawer in range(len(drawer_contains_box_vars) - 1):
+        for drawer in range(self.num_drawers - 1):
             for i in range(1, len(drawer_contains_box_vars[drawer])):
+                # drawer_contains_box_vars[drawer][i] => Or(drawer_contains_box_vars[drawer + 1][i:])
                 model.add_bool_or(
                     [drawer_contains_box_vars[drawer][i].negated()]
                     + drawer_contains_box_vars[drawer + 1][i:]
@@ -276,6 +311,280 @@ class ManufacturingSchedulingFactory:
 
         return remaining_boxes_vars
 
+    def enforce_drawer_selection_policy(
+        self,
+        model: cp_model.CpModel,
+        drawer_contains_box_vars: List[List[cp_model.IntVar]],
+        order_uses_drawer_vars: List[List[cp_model.IntVar]],
+        remaining_boxes_vars: List[List[cp_model.IntVar]],
+        replenishments: List[List[optional_activity_type]],
+        replenishment_position_vars: Dict[str, Tuple[cp_model.IntVar, int, int]],
+    ):
+        drawer_is_empty_vars = self.get_drawer_empty_vars_outside_replenish_windows(
+            model, order_uses_drawer_vars, remaining_boxes_vars
+        )
+        drawer_is_empty_vars.update(
+            self.get_drawer_empty_vars_during_replenish_windows(
+                model,
+                order_uses_drawer_vars,
+                remaining_boxes_vars,
+                replenishments,
+                replenishment_position_vars,
+            )
+        )
+        print("enforce_drawer_selection_policy2:", datetime.now())
+        cache = dict()
+
+        for order_idx, order in enumerate(self.orders):
+            for drawer in range(self.num_drawers):
+                order_uses_drawer = order_uses_drawer_vars[order_idx][drawer]
+                drawer_contains_box = drawer_contains_box_vars[drawer][
+                    self.boxes.index(order.box)
+                ]
+
+                prev_drawers_empty = []
+                for prev_drawer in range(
+                    max(0, drawer - self.max_drawers_per_box + 1), drawer
+                ):
+                    # for prev_drawer in range(drawer):
+                    prev_drawer_empty = drawer_is_empty_vars[(prev_drawer, order_idx)]
+                    prev_drawer_contains_box = drawer_contains_box_vars[prev_drawer][
+                        self.boxes.index(order.box)
+                    ]
+                    cache_key = (
+                        id(prev_drawer_contains_box),
+                        id(prev_drawer_empty),
+                    )
+                    if cache_key not in cache:
+                        bool_var = model.new_bool_var(
+                            f"{id(prev_drawer_contains_box)}_{id(prev_drawer_empty)}"
+                        )
+                        cache[cache_key] = bool_var
+                        # bool_var <=> (prev_drawer_contains_box => prev_drawer_empty)
+                        model.add_implication(
+                            prev_drawer_contains_box, prev_drawer_empty
+                        ).only_enforce_if(bool_var)
+                        model.add_bool_and(
+                            prev_drawer_contains_box, prev_drawer_empty.negated()
+                        ).only_enforce_if(bool_var.negated())
+                    else:
+                        bool_var = cache[cache_key]
+
+                    prev_drawers_empty.append(bool_var)
+
+                order_start = self.instance.box_construction_duration * order_idx
+                order_end = order_start + self.instance.box_construction_duration
+                replenishment, pos_vars = self.overlapping_replenishment(
+                    (order_start, order_end),
+                    drawer,
+                    replenishments,
+                    replenishment_position_vars,
+                )
+
+                if replenishment is None:
+                    model.add_bool_and(order_uses_drawer).only_enforce_if(
+                        [
+                            drawer_contains_box,
+                            drawer_is_empty_vars[(drawer, order_idx)].negated(),
+                        ]
+                        + prev_drawers_empty
+                    )
+                else:
+                    model.add_bool_and(order_uses_drawer).only_enforce_if(
+                        [
+                            drawer_contains_box,
+                            drawer_is_empty_vars[(drawer, order_idx)].negated(),
+                            replenishment.is_present.negated(),
+                        ]
+                        + prev_drawers_empty
+                    )
+                    model.add_bool_and(order_uses_drawer).only_enforce_if(
+                        [
+                            drawer_contains_box,
+                            drawer_is_empty_vars[(drawer, order_idx)].negated(),
+                            replenishment.is_present,
+                        ]
+                        + [pos_var.negated() for pos_var in pos_vars]
+                        + prev_drawers_empty
+                    )
+
+                # model.add_bool_and(order_uses_drawer).only_enforce_if(
+                #     [
+                #         drawer_contains_box,
+                #         drawer_is_empty_vars[(drawer, order_idx)].negated(),
+                #     ]
+                #     + prev_drawers_empty
+                # )
+
+    def overlapping_replenishment(
+        self,
+        window: Tuple[int, int],
+        drawer: int,
+        replenishments: List[List[optional_activity_type]],
+        replenishment_position_vars: Dict[str, Tuple[cp_model.IntVar, int, int]],
+    ) -> Tuple[Optional[optional_activity_type], List[cp_model.IntVar]]:
+        start, end = window
+        position_vars = []
+        for window_replenishments in replenishments:
+            replenishment = window_replenishments[drawer]
+            for pos_var, lb, ub in replenishment_position_vars[
+                replenishment.interval.name
+            ]:
+                if (lb <= start < ub) or (start <= lb < end):
+                    position_vars.append(pos_var)
+
+            if len(position_vars) > 0:
+                return replenishment, position_vars
+
+        return None, []
+
+    def get_drawer_empty_vars_outside_replenish_windows(
+        self,
+        model: cp_model.CpModel,
+        order_uses_drawer_vars: List[List[cp_model.IntVar]],
+        remaining_boxes_vars: List[List[cp_model.IntVar]],
+    ) -> Dict[Tuple[int, int], cp_model.IntVar]:
+        print("get_drawer_empty_vars_outside_replenish_windows:", datetime.now())
+        drawer_is_empty_vars = dict()
+
+        prev_window_end = 0
+        for window_idx, (start_window, end_window) in enumerate(
+            [(w.start, w.end) for w in self.instance.replenish_windows]
+            + [(self.makespan, 0)]
+        ):
+            for i in range(
+                (start_window - prev_window_end)
+                // self.instance.box_construction_duration
+            ):
+                order_idx = (
+                    prev_window_end // self.instance.box_construction_duration + i
+                )
+
+                for drawer in range(self.num_drawers):
+                    count = self.count_used_drawer(
+                        drawer,
+                        start=prev_window_end,
+                        end=order_idx * self.instance.box_construction_duration,
+                        order_uses_drawer_vars=order_uses_drawer_vars,
+                    )
+
+                    drawer_empty = model.new_bool_var(
+                        f"drawer{drawer}_is_empty@order{order_idx}"
+                    )
+                    drawer_is_empty_vars[(drawer, order_idx)] = drawer_empty
+                    model.add(
+                        (remaining_boxes_vars[drawer][window_idx] - count) == 0
+                    ).only_enforce_if(drawer_empty)
+                    model.add(
+                        (remaining_boxes_vars[drawer][window_idx] - count) > 0
+                    ).only_enforce_if(drawer_empty.negated())
+
+            if end_window % self.instance.box_construction_duration == 0:
+                prev_window_end = end_window
+            else:
+                prev_window_end = (
+                    end_window
+                    + self.instance.box_construction_duration
+                    - (end_window % self.instance.box_construction_duration)
+                )
+
+        return drawer_is_empty_vars
+
+    def get_drawer_empty_vars_during_replenish_windows(
+        self,
+        model: cp_model.CpModel,
+        order_uses_drawer_vars: List[List[cp_model.IntVar]],
+        remaining_boxes_vars: List[List[cp_model.IntVar]],
+        replenishments: List[List[optional_activity_type]],
+        replenishment_position_vars: Dict[str, Tuple[cp_model.IntVar, int, int]],
+    ) -> Dict[Tuple[int, int], cp_model.IntVar]:
+        print("get_drawer_empty_vars_during_replenish_windows:", datetime.now())
+        counter = 0
+
+        drawer_is_empty_vars = dict()
+        prev_window_end = 0
+        for window_idx, replenish_window in enumerate(self.instance.replenish_windows):
+            print(f"window {window_idx}:", datetime.now())
+
+            print(f"drawer_empty:", datetime.now())
+            for drawer in range(self.num_drawers):
+                for order_idx, order in self.orders_within_time_window(
+                    (replenish_window.start, replenish_window.end)
+                ):
+                    drawer_empty = model.new_bool_var(
+                        f"drawer{drawer}_is_empty@order{order_idx}"
+                    )
+                    drawer_is_empty_vars[(drawer, order_idx)] = drawer_empty
+
+            print(f"constraints:", datetime.now())
+            for drawer in range(self.num_drawers):
+                print(f"drawer:", datetime.now())
+                replenishment = replenishments[window_idx][drawer]
+                print(
+                    "len(replenishment_position_vars[replenishment.interval.name])",
+                    len(replenishment_position_vars[replenishment.interval.name]),
+                )
+                for i, (pos_var, lb, ub) in enumerate(
+                    replenishment_position_vars[replenishment.interval.name]
+                ):
+                    for order_idx, order in self.orders_within_time_window(
+                        (replenish_window.start, replenish_window.end)
+                    ):
+                        counter += 1
+                        order_start = (
+                            self.instance.box_construction_duration * order_idx
+                        )
+                        order_end = (
+                            order_start + self.instance.box_construction_duration
+                        )
+                        drawer_empty = drawer_is_empty_vars[(drawer, order_idx)]
+
+                        count1 = self.count_used_drawer(
+                            drawer,
+                            start=prev_window_end,
+                            end=order_start,
+                            order_uses_drawer_vars=order_uses_drawer_vars,
+                        )
+                        remaining_boxes1 = (
+                            remaining_boxes_vars[drawer][window_idx] - count1
+                        )
+                        count2 = self.count_used_drawer(
+                            drawer,
+                            start=ub,
+                            end=order_start,
+                            order_uses_drawer_vars=order_uses_drawer_vars,
+                        )
+                        remaining_boxes2 = remaining_boxes_vars[drawer][0] - count2
+                        remaining_boxes = None
+                        if order_end <= lb:
+                            remaining_boxes = remaining_boxes1
+                        elif order_start >= ub:
+                            remaining_boxes = remaining_boxes2
+
+                        if remaining_boxes is not None:
+                            model.add(remaining_boxes == 0).only_enforce_if(
+                                drawer_empty, replenishment.is_present, pos_var
+                            )
+                            model.add(remaining_boxes > 0).only_enforce_if(
+                                drawer_empty.negated(),
+                                replenishment.is_present,
+                                pos_var,
+                            )
+
+                        if i == 0:
+                            model.add(remaining_boxes1 == 0).only_enforce_if(
+                                drawer_empty, replenishment.is_present.negated()
+                            )
+                            model.add(remaining_boxes1 > 0).only_enforce_if(
+                                drawer_empty.negated(),
+                                replenishment.is_present.negated(),
+                            )
+
+            prev_window_end = replenish_window.end
+
+        print("counter", counter)
+        return drawer_is_empty_vars
+
     def ensure_sufficient_boxes_after_final_replenish_window(
         self,
         model: cp_model.CpModel,
@@ -305,6 +614,7 @@ class ManufacturingSchedulingFactory:
             model.add(last_r_boxes_var == (prev_r_boxes_var - used_boxes))
 
     def get_optimization_model(self):
+        print("get_optimization_model:", datetime.now())
         model = cp_model.CpModel()
         drawer_contains_box_vars = self.define_drawer_contains_box_vars(model)
         order_uses_drawer_vars = self.define_order_uses_drawer_vars(
@@ -315,6 +625,7 @@ class ManufacturingSchedulingFactory:
         )
 
         replenishments: List[List[optional_activity_type]] = []
+        replenishment_position_vars: Dict[str, Tuple[cp_model.IntVar, int, int]] = {}
         prev_end_window = 0
         for window_idx, replenish_window in enumerate(self.instance.replenish_windows):
             start_window, end_window = replenish_window.start, replenish_window.end
@@ -339,12 +650,14 @@ class ManufacturingSchedulingFactory:
                 )
                 remaining_boxes_vars[drawer].append(r_boxes_var)
 
-                replenishment_position_vars = []
-                for lb, ub in self.replenishment_intervals_in_window(
+                replenishment_position_vars[replenishment.interval.name] = []
+                for lb, ub in self.replenishment_intervals_in_window2(
                     (start_window, end_window)
                 ):
                     pos_var = model.new_bool_var(f"{replenishment_name}<{lb},{ub}>")
-                    replenishment_position_vars.append(pos_var)
+                    replenishment_position_vars[replenishment.interval.name].append(
+                        (pos_var, lb, ub)
+                    )
 
                     # enforce relpenishment is performed between [lb, ub]
                     model.add(replenishment.start >= lb).only_enforce_if(pos_var)
@@ -386,9 +699,15 @@ class ManufacturingSchedulingFactory:
                 #     replenishment.is_present
                 # )
                 # enforce exactly one position var when replenishment is performed
-                model.add(sum(replenishment_position_vars) == 1).only_enforce_if(
-                    replenishment.is_present
-                )
+                model.add(
+                    sum(
+                        p[0]
+                        for p in replenishment_position_vars[
+                            replenishment.interval.name
+                        ]
+                    )
+                    == 1
+                ).only_enforce_if(replenishment.is_present)
 
                 # update remaining boxes var when replenishment is not performed
                 all_used_boxes = self.count_used_drawer(
@@ -410,6 +729,16 @@ class ManufacturingSchedulingFactory:
         self.ensure_sufficient_boxes_after_final_replenish_window(
             model, remaining_boxes_vars, order_uses_drawer_vars
         )
+        print("enforce_drawer_selection_policy2:", datetime.now())
+        self.enforce_drawer_selection_policy(
+            model,
+            drawer_contains_box_vars,
+            order_uses_drawer_vars,
+            remaining_boxes_vars,
+            replenishments,
+            replenishment_position_vars,
+        )
+        print("add_quality_metric:", datetime.now())
         self.add_quality_metric(model, replenishments)
 
         return model, replenishments, drawer_contains_box_vars, order_uses_drawer_vars

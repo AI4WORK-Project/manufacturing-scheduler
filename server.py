@@ -88,6 +88,7 @@ def schedule():
     return Response(solution.to_json(), mimetype="application/json", status=200)
 
 
+# TODO: remove
 # @app.route("/last_schedule_plot_image", methods=["GET"])
 # def last_schedule_plot_image():
 #     logging.info("Received request for the last generated schedule plot image.")
@@ -105,7 +106,7 @@ def last_schedule_gantt():
     logging.info("Received request for the last generated schedule plot html.")
     if not os.path.exists(plot_html_path):
         return Response(
-            '{"message":"Plot html not found"}',
+            '{"message":"Gantt html not found"}',
             mimetype="application/json",
             status=404,
         )
