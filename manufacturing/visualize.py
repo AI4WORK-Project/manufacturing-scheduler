@@ -25,6 +25,7 @@ def get_cmap(num_colors) -> List:
 def plot_solution(
     instance: ManufacturingInstance,
     solution: ManufacturingSolution,
+    plot_box_constructions: bool = True,
     image_path: Optional[str] = None,
     html_path: Optional[str] = None,
 ) -> None:
@@ -47,34 +48,35 @@ def plot_solution(
         drawer_idx = drawer_to_index[drawer]
         box_construction_start = i * instance.box_construction_duration
 
-        # # Add box construction bar
-        # fig.add_trace(
-        #     go.Scatter(
-        #         x=[
-        #             box_construction_start,
-        #             box_construction_start + instance.box_construction_duration,
-        #             box_construction_start + instance.box_construction_duration,
-        #             box_construction_start,
-        #             box_construction_start,
-        #         ],
-        #         y=[4, 4, 6, 6, 4],
-        #         fill="toself",
-        #         fillcolor=color_palette[drawer_idx],
-        #         line=dict(color=color_palette[drawer_idx]),
-        #         mode="lines",
-        #         name=f"Construction [Box {drawer_box_mapping[drawer_idx]}, Drawer {drawer}]",
-        #         showlegend=False,
-        #     )
-        # )
+        if plot_box_constructions:
+            # Add box construction bar
+            fig.add_trace(
+                go.Scatter(
+                    x=[
+                        box_construction_start,
+                        box_construction_start + instance.box_construction_duration,
+                        box_construction_start + instance.box_construction_duration,
+                        box_construction_start,
+                        box_construction_start,
+                    ],
+                    y=[4, 4, 6, 6, 4],
+                    fill="toself",
+                    fillcolor=color_palette[drawer_idx],
+                    line=dict(color=color_palette[drawer_idx]),
+                    mode="lines",
+                    name=f"Construction [Box {drawer_box_mapping[drawer_idx]}, Drawer {drawer}]",
+                    showlegend=False,
+                )
+            )
 
-        # # Add text annotation
-        # fig.add_annotation(
-        #     x=box_construction_start + instance.box_construction_duration / 2,
-        #     y=5,
-        #     text=f"{drawer_box_mapping[drawer_idx]}{drawer}",
-        #     showarrow=False,
-        #     font=dict(color="black"),
-        # )
+            # Add text annotation
+            fig.add_annotation(
+                x=box_construction_start + instance.box_construction_duration / 2,
+                y=5,
+                text=f"{drawer_box_mapping[drawer_idx]}{drawer}",
+                showarrow=False,
+                font=dict(color="black"),
+            )
 
         remaining_boxes[drawer_idx].append(
             (
@@ -167,10 +169,10 @@ def plot_solution(
     #             font=dict(color="black"),
     #         )
 
-    # Generate tick values every tick interval
-    max_time = len(solution.box_constructions) * instance.box_construction_duration
-    tick_interval = 60  # interval in seconds
-    tick_vals = list(range(0, int(max_time) + tick_interval, tick_interval))
+    tick_vals = []
+    # Add start and end times of each replenishment window
+    for replenish_window in instance.replenish_windows:
+        tick_vals += [replenish_window.start, replenish_window.end]
 
     # Convert elapsed seconds to actual clock times based on instance.start_time
     start_datetime = datetime.combine(datetime.today().date(), instance.start_time)

@@ -70,7 +70,11 @@ def schedule():
         if solution is not None:
             logging.info(f"Solution found")
             plot_solution(
-                instance, solution, image_path=plot_img_path, html_path=plot_html_path
+                instance,
+                solution,
+                plot_box_constructions=False,
+                image_path=plot_img_path,
+                html_path=plot_html_path,
             )
         else:
             logging.info("No solution has been found for the given problem")
