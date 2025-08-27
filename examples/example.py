@@ -9,6 +9,7 @@ from manufacturing import (
 from manufacturing.dataclasses.instance import Order, OperatorOrderList
 import pathlib
 import os
+import json
 from typing import List
 
 
@@ -54,7 +55,7 @@ def main():
     solution: ManufacturingSolution = factory.get_solution()
     if solution is not None:
         with open(solution_data, "w") as f:
-            f.write(solution.to_json())
+            f.write(json.dumps(json.loads(solution.to_json()), indent=4))
 
         plot_solution(instance, solution)
 
