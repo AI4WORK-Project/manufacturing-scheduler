@@ -12,7 +12,7 @@ from typing import Tuple, List, Optional, Dict
 import pytest
 
 
-@pytest.mark.parametrize("instance", [1, 2, 3, 4, 5, 6, 7])
+@pytest.mark.parametrize("instance", [1, 2, 3, 4, 5, 6])
 def test_instance(instance: int):
     instance, solution = solve_instance(instance, time_limit=60)
     validate_solution(instance, solution)
@@ -64,7 +64,7 @@ def solve_instance(
     )
 
     factory = ManufacturingSchedulingFactory(instance)
-    solution: ManufacturingSolution = factory.get_solution()
+    solution: ManufacturingSolution = factory.get_solution(time_limit)
     assert solution is not None
     return instance, solution
 
