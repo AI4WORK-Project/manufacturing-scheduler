@@ -1,11 +1,10 @@
 from manufacturing import ManufacturingInstance, ManufacturingSolution
 
 import collections
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any, Optional, Iterator
 from ortools.sat.python import cp_model
 
 from manufacturing.dataclasses import solution
-from datetime import datetime
 
 
 order_type = collections.namedtuple(
@@ -117,7 +116,9 @@ class ManufacturingSchedulingFactory:
             params=params,
         )
 
-    def replenishment_intervals_in_window(self, window: Tuple[int, int]):
+    def replenishment_intervals_in_window(
+        self, window: Tuple[int, int]
+    ) -> Iterator[Tuple[int, int]]:
         """
         Yields all time intervals within the specified window during which replenishment
         can be performed.
@@ -161,7 +162,9 @@ class ManufacturingSchedulingFactory:
                 end_ub = next_tp(end_ub)
                 start_lb = end_lb - self.instance.replenish_duration + 1
 
-    def replenishment_intervals_in_window2(self, window: Tuple[int, int]):
+    def replenishment_intervals_in_window2(
+        self, window: Tuple[int, int]
+    ) -> Iterator[Tuple[int, int]]:
         """
         Yields all time intervals within the specified window during which replenishment
         can be performed.
@@ -182,7 +185,7 @@ class ManufacturingSchedulingFactory:
         start: int,
         end: int,
         order_uses_drawer_vars: List[List[cp_model.IntVar]],
-    ):
+    ) -> cp_model.LinearExpr:
         """Counts the number of times a specified drawer is used within a given time interval."""
 
         cache_key = (box_idx, drawer, start, end)
@@ -196,6 +199,7 @@ class ManufacturingSchedulingFactory:
         end_idx = end // self.instance.box_construction_duration
         if end % self.instance.box_construction_duration == 0:
             end_idx -= 1
+        end_idx = min(len(self.orders) - 1, end_idx)
 
         order_idxs = []
         for order_idx in range(start_idx, end_idx + 1):
@@ -220,6 +224,7 @@ class ManufacturingSchedulingFactory:
         end_idx = end_window // self.instance.box_construction_duration
         if end_window % self.instance.box_construction_duration == 0:
             end_idx -= 1
+        end_idx = min(len(self.orders) - 1, end_idx)
 
         return [(i, self.orders[i]) for i in range(start_idx, end_idx + 1)]
 
@@ -306,7 +311,7 @@ class ManufacturingSchedulingFactory:
 
         return order_uses_drawer_vars
 
-    def initialize_remaining_boxes_vars(self) -> List[List[cp_model.IntVar]]:
+    def initialize_remaining_boxes_vars(self) -> List[List[List[cp_model.IntVar]]]:
         remaining_boxes_vars = []
         for box_idx, box in enumerate(self.boxes):
             remaining_boxes_vars.append([])
@@ -320,7 +325,7 @@ class ManufacturingSchedulingFactory:
         model: cp_model.CpModel,
         drawer_contains_box_vars: List[List[cp_model.IntVar]],
         order_uses_drawer_vars: List[List[cp_model.IntVar]],
-        remaining_boxes_vars: List[List[cp_model.IntVar]],
+        remaining_boxes_vars: List[List[List[cp_model.IntVar]]],
         replenishments: List[List[optional_activity_type]],
         replenishment_position_vars: Dict[str, Tuple[cp_model.IntVar, int, int]],
     ):
@@ -438,7 +443,7 @@ class ManufacturingSchedulingFactory:
         self,
         model: cp_model.CpModel,
         order_uses_drawer_vars: List[List[cp_model.IntVar]],
-        remaining_boxes_vars: List[List[cp_model.IntVar]],
+        remaining_boxes_vars: List[List[List[cp_model.IntVar]]],
     ) -> Dict[Tuple[int, int], cp_model.IntVar]:
         drawer_is_empty_vars = dict()
 
@@ -454,6 +459,9 @@ class ManufacturingSchedulingFactory:
                 order_idx = (
                     prev_window_end // self.instance.box_construction_duration + i
                 )
+                if order_idx >= len(self.orders):
+                    break
+
                 box_idx = self.boxes.index(self.orders[order_idx].box)
                 for drawer in range(self.max_drawers_per_box):
                     if order_idx < self.first_eligible_empty_drawer_orders[box_idx]:
@@ -495,7 +503,7 @@ class ManufacturingSchedulingFactory:
         self,
         model: cp_model.CpModel,
         order_uses_drawer_vars: List[List[cp_model.IntVar]],
-        remaining_boxes_vars: List[List[cp_model.IntVar]],
+        remaining_boxes_vars: List[List[List[cp_model.IntVar]]],
         replenishments: List[List[optional_activity_type]],
         replenishment_position_vars: Dict[str, Tuple[cp_model.IntVar, int, int]],
     ) -> Dict[Tuple[int, int], cp_model.IntVar]:
@@ -593,7 +601,7 @@ class ManufacturingSchedulingFactory:
     def ensure_sufficient_boxes_after_final_replenish_window(
         self,
         model: cp_model.CpModel,
-        remaining_boxes_vars: List[List[cp_model.IntVar]],
+        remaining_boxes_vars: List[List[List[cp_model.IntVar]]],
         order_uses_drawer_vars: List[List[cp_model.IntVar]],
     ):
         """
@@ -787,8 +795,6 @@ class ManufacturingSchedulingFactory:
     def get_solution(
         self, time_limit: Optional[int] = None
     ) -> Optional[ManufacturingSolution]:
-        # TODO: check remaining boxes at the end of each window
-
         solver = cp_model.CpSolver()
         if time_limit is not None:
             solver.parameters.max_time_in_seconds = time_limit
@@ -807,18 +813,16 @@ class ManufacturingSchedulingFactory:
             )
 
             drawer_box_mapping = []
-            relative_drawer_to_drawer = []
+            box_drawer_to_drawer = []
             for box_idx, box in enumerate(self.boxes):
-                relative_drawer_to_drawer.append([])
+                box_drawer_to_drawer.append([])
                 for drawer in range(self.max_drawers_per_box):
                     if solver.value(self.drawer_contains_box_vars[box_idx][drawer]):
-                        relative_drawer_to_drawer[box_idx].append(
-                            len(drawer_box_mapping)
-                        )
+                        box_drawer_to_drawer[box_idx].append(len(drawer_box_mapping))
                         drawer_box_mapping.append(
                             solution.Drawer(
                                 self.instance.drawers[
-                                    relative_drawer_to_drawer[box_idx][drawer]
+                                    box_drawer_to_drawer[box_idx][drawer]
                                 ],
                                 box,
                             )
@@ -842,9 +846,9 @@ class ManufacturingSchedulingFactory:
                                 start = lb
                                 break
                         assert start is not None
-                        drawer = relative_drawer_to_drawer[
-                            replenishment.params["box_idx"]
-                        ][replenishment.params["drawer"]]
+                        drawer = box_drawer_to_drawer[replenishment.params["box_idx"]][
+                            replenishment.params["drawer"]
+                        ]
                         replenishments.append(
                             solution.Replenishment(
                                 self.instance.drawers[drawer],
@@ -857,10 +861,10 @@ class ManufacturingSchedulingFactory:
             for order_idx, order in enumerate(self.orders):
                 for drawer in range(self.max_drawers_per_box):
                     if solver.value(self.order_uses_drawer_vars[order_idx][drawer]):
-                        drawer2 = relative_drawer_to_drawer[
-                            self.boxes.index(order.box)
-                        ][drawer]
-                        box_constructions.append(self.instance.drawers[drawer2])
+                        drawer_idx = box_drawer_to_drawer[self.boxes.index(order.box)][
+                            drawer
+                        ]
+                        box_constructions.append(self.instance.drawers[drawer_idx])
                         break
 
             solver_info = solution.SolverInfo(

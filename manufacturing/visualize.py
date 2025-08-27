@@ -25,7 +25,7 @@ def get_cmap(num_colors) -> List:
 def plot_solution(
     instance: ManufacturingInstance,
     solution: ManufacturingSolution,
-    plot_box_constructions: bool = True,
+    plot_box_constructions: bool = False,
     image_path: Optional[str] = None,
     html_path: Optional[str] = None,
 ) -> None:
@@ -34,6 +34,7 @@ def plot_solution(
     fig = go.Figure()
 
     color_palette = get_cmap(len(instance.drawers))
+    start_datetime = datetime.combine(datetime.today().date(), instance.start_time)
     drawer_to_index = dict((drawer, idx) for idx, drawer in enumerate(instance.drawers))
     drawer_box_mapping = {
         drawer_to_index[drawer.drawer]: drawer.box
@@ -108,6 +109,9 @@ def plot_solution(
     # Add replenishments
     for replenishment in solution.replenishments:
         drawer_idx = drawer_to_index[replenishment.drawer]
+        start = (start_datetime + timedelta(seconds=replenishment.start)).strftime(
+            "%H:%M"
+        )
 
         # Add replenishment bar
         fig.add_trace(
@@ -124,7 +128,7 @@ def plot_solution(
                 fillcolor=color_palette[drawer_idx],
                 line=dict(color=color_palette[drawer_idx]),
                 mode="lines",
-                name=f"Replenishment [Box {drawer_box_mapping[drawer_idx]}, Drawer {replenishment.drawer}]",
+                name=f"Replenishment [Box {drawer_box_mapping[drawer_idx]}, Drawer {replenishment.drawer}, Start {start}]",
                 showlegend=False,
             )
         )
@@ -175,7 +179,6 @@ def plot_solution(
         tick_vals += [replenish_window.start, replenish_window.end]
 
     # Convert elapsed seconds to actual clock times based on instance.start_time
-    start_datetime = datetime.combine(datetime.today().date(), instance.start_time)
     tick_text = [
         (start_datetime + timedelta(seconds=t)).strftime("%H:%M:%S") for t in tick_vals
     ]
