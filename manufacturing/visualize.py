@@ -128,8 +128,9 @@ def plot_solution(
                 fillcolor=color_palette[drawer_idx],
                 line=dict(color=color_palette[drawer_idx]),
                 mode="lines",
-                name=f"Replenishment [Box {drawer_box_mapping[drawer_idx]}, Drawer {replenishment.drawer}, Start {start}]",
+                name=f"Replenishment [Box {drawer_box_mapping[drawer_idx]}, Drawer {replenishment.drawer}, Time {start}]",
                 showlegend=False,
+                hoverinfo="text",
             )
         )
 
