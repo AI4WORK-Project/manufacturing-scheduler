@@ -24,7 +24,7 @@ jobs:
           python -m pytest -v ./tests/test_solver.py
       - name: Run API tests
         run: |
-          python server.py &
+          fastapi run server.py --port 5000 &
           SERVER_PID=$!
           sleep 1
           python -m pytest -v ./tests/test_api.py
