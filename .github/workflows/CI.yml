@@ -31,7 +31,7 @@ jobs:
           kill $SERVER_PID
       - name: Client example test
         run: |
-          python server.py &
+          fastapi run server.py --port 5000 &
           SERVER_PID=$!
           sleep 1
           python examples/client_example.py
