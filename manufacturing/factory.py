@@ -808,10 +808,6 @@ class ManufacturingSchedulingFactory:
 
         status = solver.solve(self.model)
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-            print(
-                f"{'Optimal' if status == cp_model.OPTIMAL else 'Feasible'} solution found."
-            )
-
             drawer_box_mapping = []
             box_drawer_to_drawer = []
             for box_idx, box in enumerate(self.boxes):
@@ -882,5 +878,4 @@ class ManufacturingSchedulingFactory:
             )
 
         else:
-            print("No solution found.")
             return None

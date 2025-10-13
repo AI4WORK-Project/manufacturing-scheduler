@@ -16,7 +16,7 @@ docker build -t manufacturing-scheduler .
 To run the container and expose the application on port 5000, execute:
 
 ```sh
-docker run -p 5000:5000 manufacturing-scheduler
+docker run --rm -it -p 5000:5000 manufacturing-scheduler
 ```
 
 ## Accessing the Application

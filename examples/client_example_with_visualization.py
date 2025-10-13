@@ -56,7 +56,7 @@ def main():
     print("Response JSON:", response.json())
 
     if response.ok:
-        solution: ManufacturingSolution = ManufacturingSolution.from_dict(
+        solution: ManufacturingSolution = ManufacturingSolution.from_json(
             response.json()
         )
         plot_solution(instance, solution)

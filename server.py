@@ -2,7 +2,8 @@ import os
 import logging
 import json
 import pathlib
-from flask import Flask, Response, request, send_file
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse, FileResponse
 from manufacturing import (
     ManufacturingProblemData,
     ManufacturingConfiguration,
@@ -11,11 +12,18 @@ from manufacturing import (
     plot_solution,
 )
 from manufacturing.dataclasses.instance import Order, OperatorOrderList
-from typing import List
+from typing import List, Optional
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("manufacturing-scheduler")
 
-app = Flask("Manufacturing-API")
+with open("configuration.json") as f:
+    configuration: ManufacturingConfiguration = ManufacturingConfiguration.from_dict(
+        json.load(f)
+    )
 
 plot_img_path = os.path.join(
     pathlib.Path(__file__).parent.resolve(), "saved_plots", "plot.png"
@@ -24,20 +32,36 @@ plot_html_path = os.path.join(
     pathlib.Path(__file__).parent.resolve(), "saved_plots", "plot.html"
 )
 
+app = FastAPI(
+    title="Manufacturing-Scheduler-API",
+    summary="FastAPI application serving the Manufacturing Scheduler service.",
+    description="FastAPI application serving the Manufacturing Scheduler service.",
+    openapi_tags=[
+        {
+            "name": "manufacturing-scheduler",
+            "description": "APIs to interact with the ``manufacturing`` module.",
+        }
+    ],
+)
 
-@app.route("/schedule", methods=["POST"])
-def schedule():
+
+@app.post(
+    "/schedule",
+    tags=["manufacturing-scheduler"],
+    summary="Generate a schedule",
+    description=(
+        "Computes an optimized manufacturing schedule based on the provided problem data. "
+        "Returns the scheduling solution in JSON format."
+    ),
+    responses={
+        200: {"description": "Solution found and returned successfully."},
+        400: {"description": "No solution has been found for the given problem."},
+        500: {"description": "Internal server error."},
+    },
+)
+def schedule(problem_data: ManufacturingProblemData, time_limit: Optional[int] = None):
     try:
-        logging.info("Schedule request received!")
-
-        with open("configuration.json") as f:
-            configuration: ManufacturingConfiguration = (
-                ManufacturingConfiguration.from_dict(json.load(f))
-            )
-
-        problem_data: ManufacturingProblemData = ManufacturingProblemData.from_dict(
-            request.json
-        )
+        logger.info(f"Schedule request received, time limit {time_limit}")
 
         operator_order_lists: List[OperatorOrderList] = [
             OperatorOrderList(operator, [])
@@ -62,13 +86,9 @@ def schedule():
         )
 
         factory = ManufacturingSchedulingFactory(instance)
-
-        time_limit = request.args.get("time_limit", None, type=int)
-        logging.info(f"Time limit: {time_limit}")
-
         solution = factory.get_solution(time_limit=time_limit)
         if solution is not None:
-            logging.info(f"Solution found")
+            logger.info(f"Solution found")
             plot_solution(
                 instance,
                 solution,
@@ -77,47 +97,42 @@ def schedule():
                 html_path=plot_html_path,
             )
         else:
-            logging.info("No solution has been found for the given problem")
-            return Response(
-                '{"message":"No solution has been found for the given problem"}',
-                mimetype="application/json",
-                status=400,
+            logger.info("No solution has been found for the given problem")
+            return JSONResponse(
+                content={"message": "No solution has been found for the given problem"},
+                status_code=400,
             )
 
     except Exception as e:
-        return Response(
-            '{"message":"%s"}' % str(e), mimetype="application/json", status=500
+        logger.error("Exception occurred while scheduling", exc_info=True)
+        return JSONResponse(
+            content={"message": f"Exception occurred while scheduling:\n{str(e)}"},
+            status_code=500,
         )
 
-    return Response(solution.to_json(), mimetype="application/json", status=200)
+    return JSONResponse(content=solution.to_json(), status_code=200)
 
 
-# TODO: remove
-# @app.route("/last_schedule_plot_image", methods=["GET"])
-# def last_schedule_plot_image():
-#     logging.info("Received request for the last generated schedule plot image.")
-#     if not os.path.exists(plot_img_path):
-#         return Response(
-#             '{"message":"Plot image not found"}',
-#             mimetype="application/json",
-#             status=404,
-#         )
-#     return send_file(plot_img_path, mimetype="image/png")
-
-
-@app.route("/last_schedule_gantt", methods=["GET"])
+@app.get(
+    "/last_schedule_gantt",
+    tags=["manufacturing-scheduler"],
+    summary="Get last generated schedule gantt chart",
+    description="Returns the HTML file of the last generated manufacturing schedule Gantt chart.",
+    responses={
+        200: {
+            "description": "The last generated Gantt chart HTML file is returned.",
+            "content": {"text/html": {}},
+        },
+        404: {"description": "No Gantt chart has been generated yet."},
+    },
+)
 def last_schedule_gantt():
-    logging.info("Received request for the last generated schedule plot html.")
+    logger.info("Received request for the last generated schedule Gantt HTML.")
     if not os.path.exists(plot_html_path):
-        return Response(
-            '{"message":"Gantt html not found"}',
-            mimetype="application/json",
-            status=404,
+        logger.info("Last generated schedule Gantt HTML not found.")
+        return JSONResponse(
+            content={"message": "Last generated schedule Gantt HTML not found"},
+            status_code=404,
         )
-    return send_file(plot_html_path, mimetype="text/html")
-
-
-if __name__ == "__main__":
-    from waitress import serve
-
-    serve(app, host="0.0.0.0", port=5000)
+    logger.info("Returning the last generated schedule Gantt HTML file.")
+    return FileResponse(path=plot_html_path, media_type="text/html")

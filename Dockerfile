@@ -15,4 +15,4 @@ RUN pip install /app/
 EXPOSE 5000
 
 # Run the server
-CMD ["python", "server.py"]
+CMD ["fastapi", "run", "server.py", "--port", "5000"]
