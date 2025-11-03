@@ -896,9 +896,12 @@ class ManufacturingSchedulingFactory:
         print("box_count", box_count)
 
         drawer_box_mapping = []
-        for drawer in range(self.num_drawers):
+        for drawer_idx in range(self.num_drawers):
             drawer_box_mapping.append(
-                solution.Drawer(drawer, box_count[drawer % len(box_count)][1])
+                solution.Drawer(
+                    self.instance.drawers[drawer_idx],
+                    box_count[drawer_idx % len(box_count)][1],
+                )
             )
 
         is_optimal = False
