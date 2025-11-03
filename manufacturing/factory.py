@@ -884,3 +884,34 @@ class ManufacturingSchedulingFactory:
         else:
             print("No solution found.")
             return None
+
+    def get_unoptimized_solution(self) -> ManufacturingSolution:
+        box_count = {b: 0 for b in self.boxes}
+        for operator_order_list in self.instance.operator_order_lists:
+            for order in operator_order_list.orders:
+                box_count[order.box] += 1
+
+        box_count = [(count, box) for box, count in box_count.items()]
+        box_count.sort(reverse=True)
+        print("box_count", box_count)
+
+        drawer_box_mapping = []
+        for drawer in range(self.num_drawers):
+            drawer_box_mapping.append(
+                solution.Drawer(drawer, box_count[drawer % len(box_count)][1])
+            )
+
+        is_optimal = False
+        replenishments = []
+        box_constructions = []
+        solver_info = solution.SolverInfo(0.0, 0.0, 0.0)
+
+        return ManufacturingSolution(
+            is_optimal,
+            drawer_box_mapping,
+            replenishments,
+            box_constructions,
+            self.instance.orders,
+            self.instance.operator_order_lists,
+            solver_info,
+        )

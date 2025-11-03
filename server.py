@@ -92,6 +92,55 @@ def schedule():
     return Response(solution.to_json(), mimetype="application/json", status=200)
 
 
+@app.route("/schedule-unoptimized", methods=["POST"])
+def schedule_unoptimized():
+    try:
+        logging.info("Schedule request received!")
+
+        with open("configuration.json") as f:
+            configuration: ManufacturingConfiguration = (
+                ManufacturingConfiguration.from_dict(json.load(f))
+            )
+
+        problem_data: ManufacturingProblemData = ManufacturingProblemData.from_dict(
+            request.json
+        )
+
+        operator_order_lists: List[OperatorOrderList] = [
+            OperatorOrderList(operator, [])
+            for operator in range(configuration.operators)
+        ]
+        for i, order_id in enumerate(problem_data.orders.order):
+            operator_order_lists[i % configuration.operators].orders.append(
+                Order(id=order_id, box=problem_data.orders.box[i])
+            )
+
+        instance: ManufacturingInstance = ManufacturingInstance(
+            start_time=problem_data.start_time,
+            operators=configuration.operators,
+            drawers=problem_data.drawers,
+            drawer_capacities=configuration.drawer_capacities,
+            replenish_windows=problem_data.replenish_windows,
+            replenish_duration=configuration.replenish_duration,
+            box_construction_duration=configuration.box_construction_duration,
+            box_filling_durations=configuration.box_filling_durations,
+            orders=problem_data.orders,
+            operator_order_lists=operator_order_lists,
+        )
+
+        factory = ManufacturingSchedulingFactory(instance)
+
+        solution = factory.get_unoptimized_solution()
+        logging.info(f"Solution found")
+
+    except Exception as e:
+        return Response(
+            '{"message":"%s"}' % str(e), mimetype="application/json", status=500
+        )
+
+    return Response(solution.to_json(), mimetype="application/json", status=200)
+
+
 # TODO: remove
 # @app.route("/last_schedule_plot_image", methods=["GET"])
 # def last_schedule_plot_image():
