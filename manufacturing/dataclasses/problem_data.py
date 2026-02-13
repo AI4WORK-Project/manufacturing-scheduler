@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
 from dataclasses_json import dataclass_json, config
 from datetime import time, datetime
-from typing import List
+from typing import List, Literal
+from functools import total_ordering
 
 
 def parse_time_string(time_str: str) -> time:
@@ -14,20 +15,51 @@ def time_to_string(dt: time) -> str:
     return dt.strftime("%H:%M:%S")
 
 
+# @total_ordering
+# @dataclass_json
+# @dataclass(frozen=True)
+# class Size:
+#     value: str
+
+#     # Define allowed values and their order
+#     _order = {"S": 0, "M": 1, "L": 2}
+
+#     def __post_init__(self):
+#         if self.value not in self._order:
+#             raise ValueError(
+#                 f"Invalid size: {self.value}. Must be one of {list(self._order.keys())}"
+#             )
+
+#     # Comparisons
+#     def __eq__(self, other):
+#         if not isinstance(other, Size):
+#             return NotImplemented
+#         return self.value == other.value
+
+#     def __lt__(self, other):
+#         if not isinstance(other, Size):
+#             return NotImplemented
+#         return self._order[self.value] < self._order[other.value]
+
+Size = Literal["L", "M", "S"]
+
+
 @dataclass_json
 @dataclass
-class ReplenishWindow:
-    start: int
-    end: int
+class Drawer:
+    drawer: int
+    size: Size
 
-    def __post_init__(self):
-        self.validate()
 
-    def validate(self):
-        assert self.start >= 0, "The start value must be greater than or equal to zero"
-        assert (
-            self.end > self.start
-        ), "The end value must be greater than the start value"
+@dataclass_json
+@dataclass
+class Box:
+    box: str
+    size: Size
+
+    def fits_in_drawer(self, drawer: Drawer) -> bool:
+        sizes = {"S": 0, "M": 1, "L": 2}
+        return sizes[drawer.size] >= sizes[self.size]
 
 
 @dataclass_json
@@ -48,33 +80,16 @@ class ManufacturingProblemData:
     start_time: time = field(
         metadata=config(encoder=time_to_string, decoder=parse_time_string)
     )
-    drawers: List[int]
-    replenish_windows: List[ReplenishWindow]
+    boxes: List[Box]
+    drawers: List[Drawer]
     orders: OrdersTable
 
     def __post_init__(self):
         self.validate()
 
-    def are_replenish_windows_overlapped(self):
-        windows = sorted(self.replenish_windows, key=lambda window: window.start)
-        for i in range(len(windows) - 1):
-            w = windows[i]
-            w_next = windows[i + 1]
-            if w.end > w_next.start:
-                return True
-        return False
-
     def validate(self):
         assert len(self.drawers) > 0, "The number of drawers must be greater than zero"
-        assert len(set(self.drawers)) == len(self.drawers), "The drawers must be unique"
-
-        assert (
-            len(self.replenish_windows) > 0
-        ), "At least one replenishment temporal window must be specified"
-
-        assert (
-            not self.are_replenish_windows_overlapped()
-        ), "Replenish windows must not overlap"
+        # assert len(set(self.drawers)) == len(self.drawers), "The drawers must be unique"
 
         assert len(set(self.orders.order)) == len(
             self.orders.order

@@ -1,31 +1,76 @@
 {
     "start_time": "08:00:00",
-    "drawers": [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11
+    "operators": 2,
+    "boxes": [
+        {
+            "box": "A",
+            "size": "L"
+        },
+        {
+            "box": "B",
+            "size": "M"
+        },
+        {
+            "box": "C",
+            "size": "M"
+        },
+        {
+            "box": "D",
+            "size": "S"
+        },
+        {
+            "box": "E",
+            "size": "S"
+        },
+        {
+            "box": "F",
+            "size": "S"
+        },
+        {
+            "box": "G",
+            "size": "S"
+        },
+        {
+            "box": "H",
+            "size": "S"
+        }
     ],
-    "replenish_windows": [
+    "drawers": [
         {
-            "start": 7200,
-            "end": 9000
+            "drawer": 1,
+            "size": "L"
         },
         {
-            "start": 14400,
-            "end": 16200
+            "drawer": 2,
+            "size": "L"
         },
         {
-            "start": 21600,
-            "end": 23400
+            "drawer": 3,
+            "size": "M"
+        },
+        {
+            "drawer": 4,
+            "size": "M"
+        },
+        {
+            "drawer": 5,
+            "size": "M"
+        },
+        {
+            "drawer": 6,
+            "size": "S"
+        },
+        {
+            "drawer": 7,
+            "size": "S"
+        },
+        {
+            "drawer": 8,
+            "size": "S"
+        },
+        {
+            "drawer": 9,
+            "size": "S"
         }
     ],
     "orders": {

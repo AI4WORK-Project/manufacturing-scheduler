@@ -4,7 +4,8 @@ from typing import List
 from datetime import time
 from manufacturing.dataclasses.configuration import DrawerCapacity, BoxFillingDuration
 from manufacturing.dataclasses.problem_data import (
-    ReplenishWindow,
+    Box,
+    Drawer,
     OrdersTable,
     parse_time_string,
     time_to_string,
@@ -32,9 +33,9 @@ class ManufacturingInstance:
         metadata=config(encoder=time_to_string, decoder=parse_time_string)
     )
     operators: int
-    drawers: List[int]
+    boxes: List[Box]
+    drawers: List[Drawer]
     drawer_capacities: List[DrawerCapacity]
-    replenish_windows: List[ReplenishWindow]
     replenish_duration: int
     box_construction_duration: int
     box_filling_durations: List[BoxFillingDuration]
@@ -42,22 +43,13 @@ class ManufacturingInstance:
     operator_order_lists: List[OperatorOrderList]
 
     def __post_init__(self):
-        self.replenish_windows.sort(key=lambda window: window.start)
         self.validate()
-
-    def are_replenish_windows_overlapped(self):
-        for i in range(len(self.replenish_windows) - 1):
-            w = self.replenish_windows[i]
-            w_next = self.replenish_windows[i + 1]
-            if w.end > w_next.start:
-                return True
-        return False
 
     def validate(self):
         # FIXME: remove duplicated validations
         assert self.operators > 0, "The number of operators must be greater than zero"
         assert len(self.drawers) > 0, "The number of drawers must be greater than zero"
-        assert len(set(self.drawers)) == len(self.drawers), "The drawers must be unique"
+        # assert len(set(self.drawers)) == len(self.drawers), "The drawers must be unique"
         assert (
             self.replenish_duration > 0
         ), "The replenish duration must be greater than zero"
@@ -68,18 +60,6 @@ class ManufacturingInstance:
         assert self.operators == len(
             self.operator_order_lists
         ), f"Mismatch between number of operators ({self.operators}) and number of operator order lists ({len(self.operator_order_lists)})"
-
-        assert (
-            len(self.replenish_windows) > 0
-        ), "At least one replenishment temporal window must be specified"
-        for window in self.replenish_windows:
-            assert (
-                window.end - window.start >= self.replenish_duration
-            ), "A replenish window must be at least as long as the replenish duration"
-
-        assert (
-            not self.are_replenish_windows_overlapped()
-        ), "Replenish windows must not overlap"
 
         # makespan = self.box_construction_duration * sum(
         #     len(orders_list.orders) for orders_list in self.operator_order_lists

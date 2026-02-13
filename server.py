@@ -51,9 +51,9 @@ def schedule():
         instance: ManufacturingInstance = ManufacturingInstance(
             start_time=problem_data.start_time,
             operators=configuration.operators,
+            boxes=problem_data.boxes,
             drawers=problem_data.drawers,
             drawer_capacities=configuration.drawer_capacities,
-            replenish_windows=problem_data.replenish_windows,
             replenish_duration=configuration.replenish_duration,
             box_construction_duration=configuration.box_construction_duration,
             box_filling_durations=configuration.box_filling_durations,
@@ -69,13 +69,13 @@ def schedule():
         solution = factory.get_solution(time_limit=time_limit)
         if solution is not None:
             logging.info(f"Solution found")
-            plot_solution(
-                instance,
-                solution,
-                plot_box_constructions=False,
-                image_path=plot_img_path,
-                html_path=plot_html_path,
-            )
+            # plot_solution(
+            #     instance,
+            #     solution,
+            #     plot_box_constructions=False,
+            #     image_path=plot_img_path,
+            #     html_path=plot_html_path,
+            # )
         else:
             logging.info("No solution has been found for the given problem")
             return Response(

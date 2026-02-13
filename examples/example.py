@@ -16,8 +16,8 @@ from typing import List
 def main():
     examples_path = pathlib.Path(__file__).parent.resolve()
     configuration_data = os.path.join(examples_path, "../configuration.json")
-    problem_data = os.path.join(examples_path, "instances/instance.json")
-    solution_data = os.path.join(examples_path, "instances/instance_solution.json")
+    problem_data = os.path.join(examples_path, "instances/instance2.json")
+    solution_data = os.path.join(examples_path, "instances/instance2_solution.json")
 
     with open(configuration_data) as f:
         configuration: ManufacturingConfiguration = (
@@ -40,9 +40,9 @@ def main():
     instance: ManufacturingInstance = ManufacturingInstance(
         start_time=problem_data.start_time,
         operators=configuration.operators,
+        boxes=problem_data.boxes,
         drawers=problem_data.drawers,
         drawer_capacities=configuration.drawer_capacities,
-        replenish_windows=problem_data.replenish_windows,
         replenish_duration=configuration.replenish_duration,
         box_construction_duration=configuration.box_construction_duration,
         box_filling_durations=configuration.box_filling_durations,
