@@ -42,6 +42,7 @@ def time_to_string(dt: time) -> str:
 #         return self._order[self.value] < self._order[other.value]
 
 Size = Literal["L", "M", "S"]
+SIZES = {"S": 0, "M": 1, "L": 2}
 
 
 @dataclass_json
@@ -58,8 +59,7 @@ class Box:
     size: Size
 
     def fits_in_drawer(self, drawer: Drawer) -> bool:
-        sizes = {"S": 0, "M": 1, "L": 2}
-        return sizes[drawer.size] >= sizes[self.size]
+        return SIZES[drawer.size] >= SIZES[self.size]
 
 
 @dataclass_json

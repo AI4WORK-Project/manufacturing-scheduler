@@ -7,7 +7,7 @@ from .problem_data import OrdersTable
 
 @dataclass_json
 @dataclass
-class Drawer:
+class DrawerWithBox:
     drawer: int
     box: str
 
@@ -32,7 +32,7 @@ class SolverInfo:
 @dataclass
 class ManufacturingSolution:
     is_solution_optimal: bool
-    drawer_box_mapping: List[Drawer]
+    drawer_box_mapping: List[DrawerWithBox]
     replenishments: List[Replenishment]
     box_constructions: List[int]
     orders: OrdersTable

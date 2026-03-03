@@ -9,6 +9,7 @@ from manufacturing.dataclasses.problem_data import (
     OrdersTable,
     parse_time_string,
     time_to_string,
+    SIZES,
 )
 
 
@@ -43,6 +44,8 @@ class ManufacturingInstance:
     operator_order_lists: List[OperatorOrderList]
 
     def __post_init__(self):
+        self.boxes.sort(key=lambda b: (SIZES[b.size], b.box))
+        self.drawers.sort(key=lambda d: (SIZES[d.size], d.drawer))
         self.validate()
 
     def validate(self):
