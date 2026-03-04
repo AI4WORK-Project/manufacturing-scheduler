@@ -250,18 +250,19 @@ class ManufacturingSchedulingFactory:
                                 cumulative_replenish_vars[box_idx][drawer_idx][-2],
                                 any_replenish_vars[order_idx],
                             )
-                            model.add_bool_or(
-                                [
-                                    replenish_vars[box_idx][drawer_idx][order_idx],
-                                    cumulative_replenish_vars[box_idx][drawer_idx][-2],
-                                ]
-                            ).only_enforce_if(crep_var)
-                            model.add_bool_or(
-                                [
-                                    replenish_vars[box_idx][drawer_idx][order_idx],
-                                    any_replenish_vars[order_idx],
-                                ]
-                            ).only_enforce_if(crep_var)
+                            # TODO
+                            # model.add_bool_or(
+                            #     [
+                            #         replenish_vars[box_idx][drawer_idx][order_idx],
+                            #         cumulative_replenish_vars[box_idx][drawer_idx][-2],
+                            #     ]
+                            # ).only_enforce_if(crep_var)
+                            # model.add_bool_or(
+                            #     [
+                            #         replenish_vars[box_idx][drawer_idx][order_idx],
+                            #         any_replenish_vars[order_idx],
+                            #     ]
+                            # ).only_enforce_if(crep_var)
 
         return cumulative_replenish_vars
 
