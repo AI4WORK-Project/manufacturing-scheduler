@@ -250,7 +250,7 @@ class ManufacturingSchedulingFactory:
                                 cumulative_replenish_vars[box_idx][drawer_idx][-2],
                                 any_replenish_vars[order_idx],
                             )
-                            # TODO
+                            # TODO: not necessary
                             # model.add_bool_or(
                             #     [
                             #         replenish_vars[box_idx][drawer_idx][order_idx],
@@ -263,6 +263,20 @@ class ManufacturingSchedulingFactory:
                             #         any_replenish_vars[order_idx],
                             #     ]
                             # ).only_enforce_if(crep_var)
+
+        # force groups of at least two replenishments
+        # for order_idx in range(0, len(self.orders), self.num_orders_per_replenishment):
+        #     if 0 < order_idx and order_idx + self.num_orders_per_replenishment < len(
+        #         self.orders
+        #     ):
+        #         model.add_implication(
+        #             any_replenish_vars[order_idx],
+        #             any_replenish_vars[order_idx + self.num_orders_per_replenishment],
+        #         ).only_enforce_if(
+        #             any_replenish_vars[
+        #                 order_idx - self.num_orders_per_replenishment
+        #             ].negated()
+        #         )
 
         return cumulative_replenish_vars
 
@@ -405,7 +419,11 @@ class ManufacturingSchedulingFactory:
                         if prev_order_idx is None:
                             prev_order_idx = -1
                         negated_rep_vars = []
-                        for i in range(prev_order_idx + 1, order_idx + 1):
+                        start = prev_order_idx + 1
+                        start -= start % self.num_orders_per_replenishment
+                        for i in range(
+                            start, order_idx + 1, self.num_orders_per_replenishment
+                        ):
                             negated_rep_vars.append(
                                 replenish_vars[box_idx][drawer_idx][i].negated()
                             )
@@ -421,12 +439,31 @@ class ManufacturingSchedulingFactory:
         for order_idx, order in enumerate(self.orders):
             box_idx = self.box_index[order.box]
             # exactly one drawer used for each order
-            # TODO
+            # TODO: both are equivalent
             # model.add_bool_or(
             model.add_exactly_one(
                 is_used_vars[box_idx][drawer_idx][order_idx]
                 for drawer_idx in range(self.max_num_drawers[box_idx])
             )
+
+        def prev_nbox(box_idx, drawer_idx, order_idx):
+            # TODO(perf): improve
+            prev_order_idx = -1
+            for i in nbox_vars[box_idx][drawer_idx]:
+                if i < order_idx:
+                    prev_order_idx = max(prev_order_idx, i)
+            return nbox_vars[box_idx][drawer_idx][prev_order_idx]
+
+        # prevent replenishment when drawer is full
+        for box_idx, box in enumerate(self.boxes):
+            for drawer_idx in range(self.max_num_drawers[box_idx]):
+                for order_idx in range(
+                    0, len(self.orders), self.num_orders_per_replenishment
+                ):
+                    model.add(
+                        prev_nbox(box_idx, drawer_idx, order_idx)
+                        < self.drawer_capacities[box_idx]
+                    ).only_enforce_if(replenish_vars[box_idx][drawer_idx][order_idx])
 
         return nbox_vars, is_used_vars
 
@@ -438,10 +475,11 @@ class ManufacturingSchedulingFactory:
         replenishment_change_vars = [any_replenish_vars[0]]
         for i in range(1, len(any_replenish_vars)):
             replenishment_change = model.new_bool_var(f"replenishment_change{i}")
-            model.add_bool_and(
-                any_replenish_vars[i - 1].negated(),
-                any_replenish_vars[i],
-            ).only_enforce_if(replenishment_change)
+            # TODO: not necessary
+            # model.add_bool_and(
+            #     any_replenish_vars[i - 1].negated(),
+            #     any_replenish_vars[i],
+            # ).only_enforce_if(replenishment_change)
             model.add_bool_or(
                 any_replenish_vars[i - 1],
                 any_replenish_vars[i].negated(),
@@ -449,6 +487,13 @@ class ManufacturingSchedulingFactory:
             replenishment_change_vars.append(replenishment_change)
 
         model.minimize(sum(replenishment_change_vars))
+        # model.minimize(
+        #     1000 * sum(replenishment_change_vars)
+        #     + sum(
+        #         any_replenish_vars[i]
+        #         for i in range(0, len(self.orders), self.num_orders_per_replenishment)
+        #     )
+        # )
 
     def get_solution(
         self, time_limit: Optional[int] = None
@@ -456,8 +501,16 @@ class ManufacturingSchedulingFactory:
         solver = cp_model.CpSolver()
         if time_limit is not None:
             solver.parameters.max_time_in_seconds = time_limit
-        solver.parameters.log_search_progress = True
-        # solver.parameters.num_workers = 1
+        # solver.parameters.num_search_workers = 20
+        # solver.parameters.log_search_progress = True
+
+        # # deterministic search, usually way slower than the non deterministic version
+        # # see: https://groups.google.com/g/or-tools-discuss/c/lPb1FzhTMt0
+        # solver.parameters.interleave_search = True
+        # solver.parameters.share_binary_clauses = False
+        # solver.parameters.interleave_batch_size = 32
+        # solver.parameters.num_workers = 16
+
         # solver.parameters.cp_model_presolve = False
         # solver.parameters.max_presolve_iterations = 1
         # solver.parameters.cp_model_probing_level = 1
@@ -520,6 +573,7 @@ class ManufacturingSchedulingFactory:
                                     start,
                                 )
                             )
+            # replenishments.sort(key=lambda r: (r.start, r.drawer))
 
             box_constructions = []
             for order_idx, order in enumerate(self.orders):

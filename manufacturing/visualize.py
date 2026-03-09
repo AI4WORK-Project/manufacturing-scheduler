@@ -36,7 +36,9 @@ def plot_solution(
     ax.set_axisbelow(True)
 
     colors = get_cmap(len(instance.drawers))
-    drawer_to_index = dict((drawer.drawer, idx) for idx, drawer in enumerate(instance.drawers))
+    drawer_to_index = dict(
+        (drawer.drawer, idx) for idx, drawer in enumerate(instance.drawers)
+    )
     drawer_box_mapping = {
         drawer_to_index[drawer.drawer]: drawer.box
         for drawer in solution.drawer_box_mapping
@@ -116,9 +118,12 @@ def plot_solution(
         boxes = drawer_capacities[drawer_box_mapping[drawer_idx]]
         for t, inc, start_activity, end_activity in remaining_boxes[drawer_idx]:
             if inc > 0:
+                # replenishment
+                assert boxes < drawer_capacities[drawer_box_mapping[drawer_idx]]
                 boxes = inc
                 y = -1
             else:
+                # order
                 boxes += inc
                 y = 3
             assert boxes >= 0
