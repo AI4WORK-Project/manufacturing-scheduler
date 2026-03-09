@@ -118,6 +118,7 @@ class ManufacturingSchedulingFactory:
             model, replenish_vars, drawers_per_box_vars
         )
 
+        self.add_robustness_constraints(model, nbox_vars)
         self.add_quality_metric(model, any_replenish_vars)
 
         return model, drawers_per_box_vars, replenish_vars, nbox_vars, is_used_vars
@@ -477,6 +478,21 @@ class ManufacturingSchedulingFactory:
 
         return nbox_vars, is_used_vars
 
+    def add_robustness_constraints(
+        self, model: cp_model.CpModel, nbox_vars: List[List[Dict[int, cp_model.IntVar]]]
+    ):
+        if self.instance.minimum_remaining_boxes > 0:
+            # FIXME: Remaining boxes may drop below the threshold while replenishment is in progress
+            for order_idx, order in enumerate(self.orders):
+                box_idx = self.box_index[order.box]
+                model.add(
+                    sum(
+                        nbox_vars[box_idx][drawer_idx][order_idx]
+                        for drawer_idx in range(self.max_num_drawers[box_idx])
+                    )
+                    >= self.instance.minimum_remaining_boxes
+                )
+
     def add_quality_metric(
         self, model: cp_model.CpModel, any_replenish_vars: List[cp_model.IntVar]
     ):
@@ -611,6 +627,7 @@ class ManufacturingSchedulingFactory:
                 self.instance.drawer_capacities,
                 self.instance.box_constructions_per_replenishment,
                 self.instance.box_filling_durations,
+                self.instance.minimum_remaining_boxes,
                 self.instance.orders,
                 self.instance.operator_order_lists,
                 status == cp_model.OPTIMAL,

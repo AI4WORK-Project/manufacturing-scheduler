@@ -103,6 +103,7 @@
         }
     ],
     "box_constructions_per_replenishment": 10,
+    "minimum_remaining_boxes": 2,
     "box_filling_durations": [
         {
             "box": "A",

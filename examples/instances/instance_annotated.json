@@ -141,7 +141,10 @@
             "filling_duration": 15
         }
     ],
-    
+
+    // Minimum number of boxes to keep in drawers for each box type to ensure robustness.
+    "minimum_remaining_boxes": 2,
+
     // List of orders coming from the ERP system.
     "orders": {
         "date": [

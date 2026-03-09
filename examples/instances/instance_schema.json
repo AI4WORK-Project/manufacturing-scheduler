@@ -143,6 +143,11 @@
                 "additionalProperties": false
             }
         },
+        "minimum_remaining_boxes": {
+            "type": "integer",
+            "description": "Minimum number of boxes to keep in drawers for each box type to ensure robustness.",
+            "minimum": 0
+        },
         "orders": {
             "type": "object",
             "description": "List of orders coming from the ERP system.",
@@ -212,6 +217,7 @@
         "drawer_capacities",
         "box_constructions_per_replenishment",
         "box_filling_durations",
+        "minimum_remaining_boxes",
         "orders"
     ],
     "additionalProperties": false

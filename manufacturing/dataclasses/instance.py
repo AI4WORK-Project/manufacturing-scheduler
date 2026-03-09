@@ -108,6 +108,7 @@ class ManufacturingInstance:
     drawer_capacities: List[DrawerCapacity]
     box_constructions_per_replenishment: int
     box_filling_durations: List[BoxFillingDuration]
+    minimum_remaining_boxes: int
     orders: OrdersTable
     operator_order_lists: List[OperatorOrderList] = field(init=False)
 
