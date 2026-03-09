@@ -4,66 +4,145 @@
     "description": "Schema representing the output of the scheduler.",
     "type": "object",
     "properties": {
-        "is_solution_optimal": {
-            "type": "boolean",
-            "description": "Boolean flag indicating if the solution found is optimal (true) or just feasible (false)."
+        "operators": {
+            "type": "integer",
+            "description": "Number of packaging operators.",
+            "minimum": 1
         },
-        "drawer_box_mapping": {
+        "boxes": {
             "type": "array",
-            "description": "List mapping each drawer to its assigned box type.",
+            "description": "Box types with their sizes.",
             "items": {
                 "type": "object",
                 "properties": {
-                    "drawer": {
-                        "type": "integer",
-                        "description": "Drawer ID."
-                    },
                     "box": {
                         "type": "string",
-                        "description": "Box type."
+                        "description": "Identifier of the box type."
+                    },
+                    "size": {
+                        "type": "string",
+                        "enum": [
+                            "S",
+                            "M",
+                            "L"
+                        ],
+                        "description": "Size of the box (Small, Medium, Large)."
                     }
                 },
                 "required": [
-                    "drawer",
-                    "box"
-                ],
-                "additionalProperties": false
-            }
-        },
-        "replenishments": {
-            "type": "array",
-            "description": "List of replenishment activities.",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "drawer": {
-                        "type": "integer",
-                        "description": "Drawer in which replenishment occurs."
-                    },
-                    "box": {
-                        "type": "string",
-                        "description": "Type of box replenished."
-                    },
-                    "start": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Start time of the replenishment activity."
-                    }
-                },
-                "required": [
-                    "drawer",
                     "box",
-                    "start"
+                    "size"
+                ]
+            }
+        },
+        "drawers": {
+            "type": "object",
+            "description": "Drawers available for storing boxes, organized by lower and upper levels. Any drawer not listed is unavailable.",
+            "properties": {
+                "lower_level": {
+                    "type": "array",
+                    "description": "Drawers on the lower level.",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "drawer",
+                            "size"
+                        ],
+                        "properties": {
+                            "drawer": {
+                                "type": "integer",
+                                "description": "Drawer number."
+                            },
+                            "size": {
+                                "type": "string",
+                                "enum": [
+                                    "S",
+                                    "M",
+                                    "L"
+                                ],
+                                "description": "Size of the drawer."
+                            }
+                        }
+                    }
+                },
+                "upper_level": {
+                    "type": "array",
+                    "description": "Drawers on the upper level.",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "drawer",
+                            "size"
+                        ],
+                        "properties": {
+                            "drawer": {
+                                "type": "integer",
+                                "description": "Drawer number."
+                            },
+                            "size": {
+                                "type": "string",
+                                "enum": [
+                                    "S",
+                                    "M",
+                                    "L"
+                                ],
+                                "description": "Size of the drawer."
+                            }
+                        }
+                    }
+                }
+            },
+            "required": [
+                "lower_level",
+                "upper_level"
+            ],
+            "additionalProperties": false
+        },
+        "drawer_capacities": {
+            "type": "array",
+            "description": "Drawer capacities by box type.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "box": {
+                        "type": "string"
+                    },
+                    "capacity": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "required": [
+                    "box",
+                    "capacity"
                 ],
                 "additionalProperties": false
             }
         },
-        "box_constructions": {
+        "box_constructions_per_replenishment": {
+            "type": "integer",
+            "description": "Duration of one replenishment measured as box constructions.",
+            "minimum": 1
+        },
+        "box_filling_durations": {
             "type": "array",
-            "description": "List of drawers used for box construction activities.",
+            "description": "Filling durations for each box type. The duration depends on the box type.",
             "items": {
-                "type": "integer",
-                "description": "Drawer ID."
+                "type": "object",
+                "properties": {
+                    "box": {
+                        "type": "string"
+                    },
+                    "filling_duration": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "required": [
+                    "box",
+                    "filling_duration"
+                ],
+                "additionalProperties": false
             }
         },
         "orders": {
@@ -168,6 +247,68 @@
                 "additionalProperties": false
             }
         },
+        "is_solution_optimal": {
+            "type": "boolean",
+            "description": "Boolean flag indicating if the solution found is optimal (true) or just feasible (false)."
+        },
+        "drawer_box_mapping": {
+            "type": "array",
+            "description": "List mapping each drawer to its assigned box type.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "drawer": {
+                        "type": "integer",
+                        "description": "Drawer ID."
+                    },
+                    "box": {
+                        "type": "string",
+                        "description": "Box type."
+                    }
+                },
+                "required": [
+                    "drawer",
+                    "box"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "replenishments": {
+            "type": "array",
+            "description": "List of replenishment activities.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "drawer": {
+                        "type": "integer",
+                        "description": "Drawer in which replenishment occurs."
+                    },
+                    "box": {
+                        "type": "string",
+                        "description": "Type of box replenished."
+                    },
+                    "box_construction_index": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Index of the box construction activity. The replenishment starts at the beginning of this activity."
+                    }
+                },
+                "required": [
+                    "drawer",
+                    "box",
+                    "box_construction_index"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "box_constructions": {
+            "type": "array",
+            "description": "List of drawers used for box construction activities.",
+            "items": {
+                "type": "integer",
+                "description": "Drawer ID."
+            }
+        },
         "solver": {
             "type": "object",
             "description": "Metadata and statistics from the scheduler.",
@@ -194,12 +335,18 @@
         }
     },
     "required": [
+        "operators",
+        "boxes",
+        "drawers",
+        "drawer_capacities",
+        "box_constructions_per_replenishment",
+        "box_filling_durations",
+        "orders",
+        "operator_order_lists",
         "is_solution_optimal",
         "drawer_box_mapping",
         "replenishments",
         "box_constructions",
-        "orders",
-        "operator_order_lists",
         "solver"
     ],
     "additionalProperties": false
