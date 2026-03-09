@@ -1,5 +1,5 @@
 from manufacturing import ManufacturingInstance, ManufacturingSolution
-from manufacturing.dataclasses.problem_data import SIZES
+from manufacturing.dataclasses.instance import SIZES
 
 import collections
 from typing import Tuple, List, Optional, Dict
@@ -22,24 +22,16 @@ class ManufacturingSchedulingFactory:
     def __init__(self, instance: ManufacturingInstance):
         self.instance = instance
         self.orders = self.get_machine_order_list()
-        self.boxes: List[str] = [box.box for box in instance.boxes]
-        self.box_index = {box: i for i, box in enumerate(self.boxes)}
+        self.boxes = self.get_boxes()
+        self.box_index = {box.box: i for i, box in enumerate(self.boxes)}
+        self.drawers = self.get_drawers()
         self.max_num_drawers = self.calculate_max_num_drawers()
         self.prev_order = self.calculate_prev_order()
 
         drawer_capacities = {
             dc.box: dc.capacity for dc in self.instance.drawer_capacities
         }
-        self.drawer_capacities = [drawer_capacities[box] for box in self.boxes]
-
-        # NOTE: assume replenish_duration is a multiple of box_construction_duration
-        assert (
-            self.instance.replenish_duration % self.instance.box_construction_duration
-            == 0
-        )
-        self.num_orders_per_replenishment = (
-            self.instance.replenish_duration // self.instance.box_construction_duration
-        )
+        self.drawer_capacities = [drawer_capacities[box.box] for box in self.boxes]
 
         (
             self.model,
@@ -48,6 +40,16 @@ class ManufacturingSchedulingFactory:
             self.nbox_vars,
             self.is_used_vars,
         ) = self.get_optimization_model()
+
+    def get_boxes(self):
+        boxes = list(self.instance.boxes)
+        boxes.sort(key=lambda b: (SIZES[b.size], b.box))
+        return boxes
+
+    def get_drawers(self):
+        drawers = self.instance.drawers.lower_level + self.instance.drawers.upper_level
+        drawers.sort(key=lambda d: (SIZES[d.size], d.drawer))
+        return drawers
 
     def get_machine_order_list(self) -> List[order_type]:
         box_filling_durations = dict(
@@ -75,19 +77,19 @@ class ManufacturingSchedulingFactory:
 
     def calculate_max_num_drawers(self) -> List[int]:
         num_boxes_ge_size = {s: 0 for s in SIZES}
-        for b in self.instance.boxes:
+        for b in self.boxes:
             for s in SIZES:
                 if SIZES[b.size] >= SIZES[s]:
                     num_boxes_ge_size[s] += 1
 
         num_drawers_ge_size = {s: 0 for s in SIZES}
-        for d in self.instance.drawers:
+        for d in self.drawers:
             for s in SIZES:
                 if SIZES[d.size] >= SIZES[s]:
                     num_drawers_ge_size[s] += 1
 
         max_num_drawers = []
-        for b in self.instance.boxes:
+        for b in self.boxes:
             max_num_drawers.append(
                 num_drawers_ge_size[b.size] - num_boxes_ge_size[b.size] + 1
             )
@@ -96,7 +98,7 @@ class ManufacturingSchedulingFactory:
 
     def calculate_prev_order(self) -> List[Optional[int]]:
         prev_order = []
-        last_order_with_box = {b.box: None for b in self.instance.boxes}
+        last_order_with_box = {b.box: None for b in self.boxes}
         for order_idx, order in enumerate(self.orders):
             prev_order.append(last_order_with_box[order.box])
             last_order_with_box[order.box] = order_idx
@@ -124,7 +126,7 @@ class ManufacturingSchedulingFactory:
         self, model: cp_model.CpModel
     ) -> List[cp_model.IntVar]:
         drawers_per_box_vars = []
-        for box_idx, box in enumerate(self.instance.boxes):
+        for box_idx, box in enumerate(self.boxes):
             drawers_per_box_vars.append(
                 model.new_int_var(
                     1,
@@ -136,15 +138,11 @@ class ManufacturingSchedulingFactory:
         for size in SIZES:
             assigned_drawers = sum(
                 drawers_per_box_vars[box_idx]
-                for box_idx, box in enumerate(self.instance.boxes)
+                for box_idx, box in enumerate(self.boxes)
                 if SIZES[box.size] <= SIZES[size]
             )
             minimum_required_drawers = len(
-                [
-                    drawer
-                    for drawer in self.instance.drawers
-                    if SIZES[drawer.size] <= SIZES[size]
-                ]
+                [drawer for drawer in self.drawers if SIZES[drawer.size] <= SIZES[size]]
             )
             if size == "L":
                 model.add(assigned_drawers == minimum_required_drawers)
@@ -158,12 +156,15 @@ class ManufacturingSchedulingFactory:
     ) -> Tuple[List[List[List[cp_model.IntVar]]], List[cp_model.IntVar]]:
         replenish_vars = [
             [[] for _ in range(self.max_num_drawers[box_idx])]
-            for box_idx in range(len(self.instance.boxes))
+            for box_idx in range(len(self.boxes))
         ]
-        for box_idx, box in enumerate(self.instance.boxes):
+        for box_idx, box in enumerate(self.boxes):
             for drawer_idx in range(self.max_num_drawers[box_idx]):
                 for order_idx, order in enumerate(self.orders):
-                    if order_idx % self.num_orders_per_replenishment == 0:
+                    if (
+                        order_idx % self.instance.box_constructions_per_replenishment
+                        == 0
+                    ):
                         rep_var = model.new_bool_var(
                             f"replenishment_box{box}_drawer{drawer_idx}@{order_idx}"
                         )
@@ -181,23 +182,23 @@ class ManufacturingSchedulingFactory:
 
         # at most one replenishment for each slot
         for order_idx, order in enumerate(self.orders):
-            if order_idx % self.num_orders_per_replenishment == 0:
+            if order_idx % self.instance.box_constructions_per_replenishment == 0:
                 slot_rep_vars = [
                     replenish_vars[box_idx][drawer_idx][order_idx]
-                    for box_idx in range(len(self.instance.boxes))
+                    for box_idx in range(len(self.boxes))
                     for drawer_idx in range(self.max_num_drawers[box_idx])
                 ]
                 model.add_at_most_one(slot_rep_vars)
 
         any_replenish_vars = []
         for order_idx, order in enumerate(self.orders):
-            if order_idx % self.num_orders_per_replenishment == 0:
+            if order_idx % self.instance.box_constructions_per_replenishment == 0:
                 any_rep_var = model.new_bool_var(f"any_replenishment@{order_idx}")
                 any_replenish_vars.append(any_rep_var)
 
                 order_rep_vars = [
                     replenish_vars[box_idx][drawer_idx][order_idx]
-                    for box_idx in range(len(self.instance.boxes))
+                    for box_idx in range(len(self.boxes))
                     for drawer_idx in range(self.max_num_drawers[box_idx])
                 ]
                 model.add_bool_and(any_rep_var.negated()).only_enforce_if(
@@ -220,10 +221,13 @@ class ManufacturingSchedulingFactory:
         cumulative_replenish_vars = [
             [[] for _ in range(num_drawers)] for num_drawers in self.max_num_drawers
         ]
-        for box_idx, box in enumerate(self.instance.boxes):
+        for box_idx, box in enumerate(self.boxes):
             for drawer_idx in range(self.max_num_drawers[box_idx]):
                 for order_idx, order in enumerate(self.orders):
-                    if order_idx % self.num_orders_per_replenishment == 0:
+                    if (
+                        order_idx % self.instance.box_constructions_per_replenishment
+                        == 0
+                    ):
                         if order_idx == 0:
                             cumulative_replenish_vars[box_idx][drawer_idx].append(
                                 replenish_vars[box_idx][drawer_idx][order_idx]
@@ -265,16 +269,16 @@ class ManufacturingSchedulingFactory:
                             # ).only_enforce_if(crep_var)
 
         # force groups of at least two replenishments
-        # for order_idx in range(0, len(self.orders), self.num_orders_per_replenishment):
-        #     if 0 < order_idx and order_idx + self.num_orders_per_replenishment < len(
+        # for order_idx in range(0, len(self.orders), self.instance.box_constructions_per_replenishment):
+        #     if 0 < order_idx and order_idx + self.instance.box_constructions_per_replenishment < len(
         #         self.orders
         #     ):
         #         model.add_implication(
         #             any_replenish_vars[order_idx],
-        #             any_replenish_vars[order_idx + self.num_orders_per_replenishment],
+        #             any_replenish_vars[order_idx + self.instance.box_constructions_per_replenishment],
         #         ).only_enforce_if(
         #             any_replenish_vars[
-        #                 order_idx - self.num_orders_per_replenishment
+        #                 order_idx - self.instance.box_constructions_per_replenishment
         #             ].negated()
         #         )
 
@@ -367,7 +371,7 @@ class ManufacturingSchedulingFactory:
         is_used_vars = [
             [{} for _ in range(num_drawers)] for num_drawers in self.max_num_drawers
         ]
-        for box_idx, box in enumerate(self.instance.boxes):
+        for box_idx, box in enumerate(self.boxes):
             for drawer_idx in range(self.max_num_drawers[box_idx]):
                 for order_idx in nbox_vars[box_idx][drawer_idx]:
                     if order_idx == -1:
@@ -420,9 +424,13 @@ class ManufacturingSchedulingFactory:
                             prev_order_idx = -1
                         negated_rep_vars = []
                         start = prev_order_idx + 1
-                        start -= start % self.num_orders_per_replenishment
+                        start -= (
+                            start % self.instance.box_constructions_per_replenishment
+                        )
                         for i in range(
-                            start, order_idx + 1, self.num_orders_per_replenishment
+                            start,
+                            order_idx + 1,
+                            self.instance.box_constructions_per_replenishment,
                         ):
                             negated_rep_vars.append(
                                 replenish_vars[box_idx][drawer_idx][i].negated()
@@ -458,7 +466,9 @@ class ManufacturingSchedulingFactory:
         for box_idx, box in enumerate(self.boxes):
             for drawer_idx in range(self.max_num_drawers[box_idx]):
                 for order_idx in range(
-                    0, len(self.orders), self.num_orders_per_replenishment
+                    0,
+                    len(self.orders),
+                    self.instance.box_constructions_per_replenishment,
                 ):
                     model.add(
                         prev_nbox(box_idx, drawer_idx, order_idx)
@@ -491,7 +501,7 @@ class ManufacturingSchedulingFactory:
         #     1000 * sum(replenishment_change_vars)
         #     + sum(
         #         any_replenish_vars[i]
-        #         for i in range(0, len(self.orders), self.num_orders_per_replenishment)
+        #         for i in range(0, len(self.orders), self.instance.box_constructions_per_replenishment)
         #     )
         # )
 
@@ -543,8 +553,8 @@ class ManufacturingSchedulingFactory:
                 num_drawers = solver.value(num_drawers_var)
                 assert 1 <= num_drawers
                 for i in range(num_drawers):
-                    drawer = self.instance.drawers[drawer_idx_offset + i]
-                    box = self.instance.boxes[box_idx]
+                    drawer = self.drawers[drawer_idx_offset + i]
+                    box = self.boxes[box_idx]
                     drawer_box_mapping.append(
                         solution.DrawerWithBox(drawer.drawer, box.box)
                     )
@@ -553,24 +563,23 @@ class ManufacturingSchedulingFactory:
             drawer_box_mapping.sort(key=lambda d: d.drawer)
 
             replenishments = []
-            for box_idx, box in enumerate(self.instance.boxes):
+            for box_idx, box in enumerate(self.boxes):
                 for drawer_idx in range(self.max_num_drawers[box_idx]):
                     for order_idx in range(
-                        0, len(self.orders), self.num_orders_per_replenishment
+                        0,
+                        len(self.orders),
+                        self.instance.box_constructions_per_replenishment,
                     ):
                         if solver.value(
                             self.replenish_vars[box_idx][drawer_idx][order_idx]
                         ):
                             assert (box_idx, drawer_idx) in relative_to_absolute_drawer
-                            drawer = self.instance.drawers[
+                            drawer = self.drawers[
                                 relative_to_absolute_drawer[(box_idx, drawer_idx)]
                             ]
-                            start = order_idx * self.instance.box_construction_duration
                             replenishments.append(
                                 solution.Replenishment(
-                                    drawer.drawer,
-                                    box.box,
-                                    start,
+                                    drawer.drawer, box.box, order_idx
                                 )
                             )
             # replenishments.sort(key=lambda r: (r.start, r.drawer))
@@ -586,7 +595,7 @@ class ManufacturingSchedulingFactory:
 
                 assert used_drawer_idx is not None
                 box_constructions.append(
-                    self.instance.drawers[
+                    self.drawers[
                         relative_to_absolute_drawer[(box_idx, used_drawer_idx)]
                     ].drawer
                 )
@@ -596,12 +605,18 @@ class ManufacturingSchedulingFactory:
             )
 
             return ManufacturingSolution(
+                self.instance.operators,
+                self.instance.boxes,
+                self.instance.drawers,
+                self.instance.drawer_capacities,
+                self.instance.box_constructions_per_replenishment,
+                self.instance.box_filling_durations,
+                self.instance.orders,
+                self.instance.operator_order_lists,
                 status == cp_model.OPTIMAL,
                 drawer_box_mapping,
                 replenishments,
                 box_constructions,
-                self.instance.orders,
-                self.instance.operator_order_lists,
                 solver_info,
             )
 
