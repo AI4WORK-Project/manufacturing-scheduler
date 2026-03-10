@@ -1,17 +1,6 @@
-from dataclasses import dataclass, field
-from dataclasses_json import dataclass_json, config
+from dataclasses import dataclass
+from dataclasses_json import dataclass_json
 from typing import List, Literal
-from datetime import time, datetime
-
-
-def parse_time_string(time_str: str) -> time:
-    """Parse a time string like 'HH:MM:SS' into a datetime object with today's date."""
-    return datetime.strptime(time_str, "%H:%M:%S").time()
-
-
-def time_to_string(dt: time) -> str:
-    """Convert a datetime.time object to a time string like HH:MM:SS."""
-    return dt.strftime("%H:%M:%S")
 
 
 Size = Literal["L", "M", "S"]
@@ -94,13 +83,6 @@ class Order:
 
 @dataclass_json
 @dataclass
-class OperatorOrderList:
-    operator: int
-    orders: List[Order]
-
-
-@dataclass_json
-@dataclass
 class ManufacturingInstance:
     operators: int
     boxes: List[Box]
@@ -110,54 +92,59 @@ class ManufacturingInstance:
     box_filling_durations: List[BoxFillingDuration]
     minimum_remaining_boxes: int
     orders: OrdersTable
-    operator_order_lists: List[OperatorOrderList] = field(init=False)
 
     def __post_init__(self):
         self.validate()
 
-        self.operator_order_lists = [
-            OperatorOrderList(operator, []) for operator in range(self.operators)
-        ]
-        for i, order_id in enumerate(self.orders.order):
-            self.operator_order_lists[i % self.operators].orders.append(
-                Order(id=order_id, box=self.orders.box[i])
-            )
-
     def validate(self):
-        # TODO: add validation checks
         assert self.operators > 0, "The number of operators must be greater than zero"
-        # assert len(self.drawers) > 0, "The number of drawers must be greater than zero"
 
-        # assert self.operators == len(
-        #     self.operator_order_lists
-        # ), f"Mismatch between number of operators ({self.operators}) and number of operator order lists ({len(self.operator_order_lists)})"
+        boxes = [b.box for b in self.boxes]
+        assert len(boxes) == len(set(boxes)), "Box identifiers must be unique"
+        assert all(b.size in SIZES for b in self.boxes), "Invalid box size detected"
 
-        # assert set(
-        #     orders_list.operator for orders_list in self.operator_order_lists
-        # ) == set(
-        #     range(self.operators)
-        # ), "Mismatch between the operators in the `operator_order_lists` and the number of operators"
+        drawers = [
+            d.drawer for d in self.drawers.lower_level + self.drawers.upper_level
+        ]
+        assert len(drawers) == len(set(drawers)), "Drawer identifiers must be unique"
+        assert len(drawers) > 0, "The number of drawers must be greater than zero"
+        assert all(
+            d.size in SIZES for d in self.drawers.lower_level + self.drawers.upper_level
+        ), "Invalid drawer size detected"
 
-        # assert len(
-        #     set(
-        #         order.id
-        #         for orders_list in self.operator_order_lists
-        #         for order in orders_list.orders
-        #     )
-        # ) == sum(
-        #     len(orders_list.orders) for orders_list in self.operator_order_lists
-        # ), "Duplicate order IDs detected in the order lists. Each order must have a unique ID."
+        dc_boxes = [dc.box for dc in self.drawer_capacities]
+        assert len(dc_boxes) == len(boxes) and set(boxes) == set(
+            dc_boxes
+        ), "Drawer capacities must be defined for all box types"
 
-        # boxes = set(
-        #     order.box
-        #     for operator_list in self.operator_order_lists
-        #     for order in operator_list.orders
-        # )
+        assert (
+            self.box_constructions_per_replenishment > 0
+        ), "box_constructions_per_replenishment must be greater than zero"
+        assert (
+            self.minimum_remaining_boxes >= 0
+        ), "minimum_remaining_boxes must be non-negative"
 
-        # assert boxes.issubset(
-        #     set(c.box for c in self.drawer_capacities)
-        # ), "Some boxes referenced in orders are not present in `drawer_capacities`. All boxes in orders must exist in `drawer_capacities`."
+        fd_boxes = [fd.box for fd in self.box_filling_durations]
+        assert len(fd_boxes) == len(boxes) and set(boxes) == set(
+            fd_boxes
+        ), "Filling durations must be defined for all box types"
 
-        # assert boxes.issubset(
-        #     set(duration.box for duration in self.box_filling_durations)
-        # ), "Some boxes referenced in orders are not present in `box_filling_durations`. All boxes in orders must exist in `box_filling_durations`."
+        assert len(set(self.orders.order)) == len(
+            self.orders.order
+        ), "Duplicate order IDs detected in the order list"
+
+        assert set(boxes) == set(
+            self.orders.box
+        ), "Orders must reference exactly the box types defined in boxes"
+        num_orders = [
+            len(self.orders.date),
+            len(self.orders.order),
+            len(self.orders.item),
+            len(self.orders.height),
+            len(self.orders.width),
+            len(self.orders.depth),
+            len(self.orders.box),
+        ]
+        assert (
+            len(set(num_orders)) == 1
+        ), "All columns in the orders table must have the same number of rows"

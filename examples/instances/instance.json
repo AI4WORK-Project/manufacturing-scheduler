@@ -3,49 +3,47 @@
     "boxes": [
         {
             "box": "A",
-            "size": "L"
+            "size": "S"
         },
         {
             "box": "B",
-            "size": "M"
+            "size": "S"
         },
         {
             "box": "C",
-            "size": "M"
+            "size": "S"
         },
         {
             "box": "D",
-            "size": "S"
+            "size": "M"
         },
         {
             "box": "E",
-            "size": "S"
+            "size": "M"
         },
         {
             "box": "F",
-            "size": "S"
+            "size": "L"
         }
     ],
     "drawers": {
-        "lower_level": [
+        "upper_level": [
             {
                 "drawer": 1,
-                "size": "L"
+                "size": "S"
             },
             {
                 "drawer": 2,
-                "size": "L"
+                "size": "S"
             },
             {
                 "drawer": 3,
-                "size": "L"
+                "size": "S"
             },
             {
                 "drawer": 4,
-                "size": "L"
-            }
-        ],
-        "upper_level": [
+                "size": "S"
+            },
             {
                 "drawer": 5,
                 "size": "M"
@@ -57,22 +55,24 @@
             {
                 "drawer": 7,
                 "size": "M"
-            },
+            }
+        ],
+        "lower_level": [
             {
                 "drawer": 8,
-                "size": "S"
+                "size": "L"
             },
             {
                 "drawer": 9,
-                "size": "S"
+                "size": "L"
             },
             {
                 "drawer": 10,
-                "size": "S"
+                "size": "L"
             },
             {
                 "drawer": 11,
-                "size": "S"
+                "size": "L"
             }
         ]
     },

@@ -1,5 +1,6 @@
 from manufacturing import ManufacturingInstance, ManufacturingSolution
-from manufacturing.dataclasses.instance import SIZES
+from manufacturing.dataclasses.instance import Order, SIZES
+from manufacturing.dataclasses.solution import OperatorOrderList
 
 import collections
 from typing import Tuple, List, Optional, Dict
@@ -21,7 +22,7 @@ class ManufacturingSchedulingFactory:
 
     def __init__(self, instance: ManufacturingInstance):
         self.instance = instance
-        self.orders = self.get_machine_order_list()
+        self.orders, self.operator_order_lists = self.get_machine_order_list()
         self.boxes = self.get_boxes()
         self.box_index = {box.box: i for i, box in enumerate(self.boxes)}
         self.drawers = self.get_drawers()
@@ -51,14 +52,25 @@ class ManufacturingSchedulingFactory:
         drawers.sort(key=lambda d: (SIZES[d.size], d.drawer))
         return drawers
 
-    def get_machine_order_list(self) -> List[order_type]:
+    def get_machine_order_list(
+        self,
+    ) -> Tuple[List[order_type], List[OperatorOrderList]]:
+        operator_order_lists = [
+            OperatorOrderList(operator, [])
+            for operator in range(self.instance.operators)
+        ]
+        for i, order_id in enumerate(self.instance.orders.order):
+            operator_order_lists[i % self.instance.operators].orders.append(
+                Order(id=order_id, box=self.instance.orders.box[i])
+            )
+
         box_filling_durations = dict(
             (bfd.box, bfd.filling_duration)
             for bfd in self.instance.box_filling_durations
         )
 
         orders = []
-        for operator_order_list in self.instance.operator_order_lists:
+        for operator_order_list in operator_order_lists:
             start = 0
             for order in operator_order_list.orders:
                 orders.append(
@@ -73,7 +85,7 @@ class ManufacturingSchedulingFactory:
                 start += box_filling_durations[order.box]
 
         orders.sort(key=lambda order: (order.start, order.operator))
-        return orders
+        return orders, operator_order_lists
 
     def calculate_max_num_drawers(self) -> List[int]:
         num_boxes_ge_size = {s: 0 for s in SIZES}
@@ -551,7 +563,7 @@ class ManufacturingSchedulingFactory:
         #         logging.info(
         #             f"solution: user_time {self.user_time}, objective_value {self.objective_value}, best_objective_bound {self.best_objective_bound}"
         #         )
-        #         # self.StopSearch()
+        #         self.StopSearch()
 
         # solution_callback = SolutionCallback()
         # status = solver.solve(self.model, solution_callback=solution_callback)
@@ -562,8 +574,8 @@ class ManufacturingSchedulingFactory:
                 f"{'Optimal' if status == cp_model.OPTIMAL else 'Feasible'} solution found."
             )
 
+            box_to_drawers = {box.box: [] for box in self.boxes}
             drawer_box_mapping = []
-            relative_to_absolute_drawer = {}
             drawer_idx_offset = 0
             for box_idx, num_drawers_var in enumerate(self.drawers_per_box_vars):
                 num_drawers = solver.value(num_drawers_var)
@@ -574,9 +586,15 @@ class ManufacturingSchedulingFactory:
                     drawer_box_mapping.append(
                         solution.DrawerWithBox(drawer.drawer, box.box)
                     )
-                    relative_to_absolute_drawer[(box_idx, i)] = drawer_idx_offset + i
+                    box_to_drawers[box.box].append(drawer.drawer)
                 drawer_idx_offset += num_drawers
             drawer_box_mapping.sort(key=lambda d: d.drawer)
+
+            relative_to_absolute_drawer = {}
+            for box_idx, box in enumerate(self.boxes):
+                box_to_drawers[box.box].sort()
+                for i, drawer in enumerate(box_to_drawers[box.box]):
+                    relative_to_absolute_drawer[(box_idx, i)] = drawer
 
             replenishments = []
             for box_idx, box in enumerate(self.boxes):
@@ -589,14 +607,9 @@ class ManufacturingSchedulingFactory:
                         if solver.value(
                             self.replenish_vars[box_idx][drawer_idx][order_idx]
                         ):
-                            assert (box_idx, drawer_idx) in relative_to_absolute_drawer
-                            drawer = self.drawers[
-                                relative_to_absolute_drawer[(box_idx, drawer_idx)]
-                            ]
+                            drawer = relative_to_absolute_drawer[(box_idx, drawer_idx)]
                             replenishments.append(
-                                solution.Replenishment(
-                                    drawer.drawer, box.box, order_idx
-                                )
+                                solution.Replenishment(drawer, box.box, order_idx)
                             )
             # replenishments.sort(key=lambda r: (r.start, r.drawer))
 
@@ -611,9 +624,7 @@ class ManufacturingSchedulingFactory:
 
                 assert used_drawer_idx is not None
                 box_constructions.append(
-                    self.drawers[
-                        relative_to_absolute_drawer[(box_idx, used_drawer_idx)]
-                    ].drawer
+                    relative_to_absolute_drawer[(box_idx, used_drawer_idx)]
                 )
 
             solver_info = solution.SolverInfo(
@@ -629,7 +640,7 @@ class ManufacturingSchedulingFactory:
                 self.instance.box_filling_durations,
                 self.instance.minimum_remaining_boxes,
                 self.instance.orders,
-                self.instance.operator_order_lists,
+                self.operator_order_lists,
                 status == cp_model.OPTIMAL,
                 drawer_box_mapping,
                 replenishments,
