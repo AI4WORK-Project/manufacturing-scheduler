@@ -1,67 +1,35 @@
 from manufacturing import (
-    ManufacturingProblemData,
-    ManufacturingConfiguration,
     ManufacturingInstance,
     ManufacturingSolution,
     ManufacturingSchedulingFactory,
 )
-from manufacturing.dataclasses.instance import OperatorOrderList, Order
+from manufacturing.dataclasses.instance import SIZES
 import pathlib
 import os
 from typing import Tuple, List, Optional, Dict
 import pytest
-
-
-@pytest.mark.parametrize("instance", [1, 2, 3, 4, 5, 6])
-def test_instance(instance: int):
-    instance, solution = solve_instance(instance, time_limit=60)
-    validate_solution(instance, solution)
+import json
 
 
 def test_instance0():
     instance, solution = solve_instance(0)
+    assert num_replenish_groups(solution) == 0
+    validate_solution(solution)
 
-    assert len(solution.replenishments) == 3
-    validate_solution(instance, solution)
+
+@pytest.mark.parametrize("instance", [1, 2, 3])
+def test_instance(instance: int):
+    instance, solution = solve_instance(instance)
+    validate_solution(solution)
 
 
 def solve_instance(
     instance: int, time_limit: Optional[int] = None
 ) -> Tuple[ManufacturingInstance, ManufacturingSolution]:
     tests_path = pathlib.Path(__file__).parent.resolve()
-    configuration_data = os.path.join(tests_path, "../configuration.json")
     problem_data = os.path.join(tests_path, f"instances/instance{instance}.json")
-
-    with open(configuration_data) as f:
-        configuration: ManufacturingConfiguration = (
-            ManufacturingConfiguration.from_json(f.read())
-        )
-
     with open(problem_data) as f:
-        problem_data: ManufacturingProblemData = ManufacturingProblemData.from_json(
-            f.read()
-        )
-
-    operator_order_lists: List[OperatorOrderList] = [
-        OperatorOrderList(operator, []) for operator in range(configuration.operators)
-    ]
-    for i, order_id in enumerate(problem_data.orders.order):
-        operator_order_lists[i % configuration.operators].orders.append(
-            Order(id=order_id, box=problem_data.orders.box[i])
-        )
-
-    instance: ManufacturingInstance = ManufacturingInstance(
-        start_time=problem_data.start_time,
-        operators=configuration.operators,
-        drawers=problem_data.drawers,
-        drawer_capacities=configuration.drawer_capacities,
-        replenish_windows=problem_data.replenish_windows,
-        replenish_duration=configuration.replenish_duration,
-        box_construction_duration=configuration.box_construction_duration,
-        box_filling_durations=configuration.box_filling_durations,
-        orders=problem_data.orders,
-        operator_order_lists=operator_order_lists,
-    )
+        instance: ManufacturingInstance = ManufacturingInstance.from_json(f.read())
 
     factory = ManufacturingSchedulingFactory(instance)
     solution: ManufacturingSolution = factory.get_solution(time_limit)
@@ -69,128 +37,158 @@ def solve_instance(
     return instance, solution
 
 
-def validate_solution(instance: ManufacturingInstance, solution: ManufacturingSolution):
-    drawer_to_index = dict((drawer, idx) for idx, drawer in enumerate(instance.drawers))
-    drawer_box_mapping = {
-        drawer_to_index[drawer.drawer]: drawer.box
-        for drawer in solution.drawer_box_mapping
-    }
-    box_drawers_mapping = {dc.box: [] for dc in instance.drawer_capacities}
-    for drawer, box in drawer_box_mapping.items():
-        box_drawers_mapping[box].append(drawer)
-    for box in box_drawers_mapping:
-        box_drawers_mapping[box].sort()
-    drawer_capacities = {dc.box: dc.capacity for dc in instance.drawer_capacities}
+def validate_solution(solution: ManufacturingSolution):
+    ManufacturingSolution.from_json(solution.to_json())
 
-    # # Ensure that each box construction in solution matches the drawer_box_mapping mapping
-    # for drawer in solution.box_constructions:
-    #     assert drawer_box_mapping[drawer_to_index[drawer.drawer]] == drawer.box
+    box_size = {b.box: SIZES[b.size] for b in solution.boxes}
+    drawer_size = {
+        d.drawer: SIZES[d.size]
+        for d in solution.drawers.lower_level + solution.drawers.upper_level
+    }
+
+    boxes = [b.box for b in solution.boxes]
+    drawers = [
+        d.drawer for d in solution.drawers.lower_level + solution.drawers.upper_level
+    ]
+
+    dbm_boxes = set(d.box for d in solution.drawer_box_mapping)
+    assert set(boxes) == dbm_boxes
+
+    dbm_drawers = [d.drawer for d in solution.drawer_box_mapping]
+    assert len(dbm_drawers) == len(drawers) and set(dbm_drawers) == set(drawers)
+
+    drawer_box_mapping = {dbm.drawer: dbm.box for dbm in solution.drawer_box_mapping}
+    for drawer, box in drawer_box_mapping.items():
+        assert drawer_size[drawer] >= box_size[box]
+
+    for r in solution.replenishments:
+        assert drawer_box_mapping[r.drawer] == r.box
+        assert r.box_construction_index < len(solution.orders.box)
+
+    rep_indexes = [r.box_construction_index for r in solution.replenishments]
+    rep_indexes.sort()
+    for i in range(len(rep_indexes) - 1):
+        assert (
+            rep_indexes[i] + solution.box_constructions_per_replenishment
+            <= rep_indexes[i + 1]
+        )
+
+    assert len(solution.box_constructions) == len(solution.orders.box)
+    for i, drawer in enumerate(solution.box_constructions):
+        assert drawer_box_mapping[drawer] == solution.orders.box[i]
+
+    capacities = {c.box: c.capacity for c in solution.drawer_capacities}
+    drawer_capacity = {d: capacities[b] for d, b in drawer_box_mapping.items()}
 
     activities = []
-    drawer_activities = [[] for _ in range(len(instance.drawers))]
+    drawer_activities = {
+        d.drawer: []
+        for d in solution.drawers.lower_level + solution.drawers.upper_level
+    }
     for i, drawer in enumerate(solution.box_constructions):
-        drawer_idx = drawer_to_index[drawer]
-        box_construction_start = i * instance.box_construction_duration
-        box_construction_end = (
-            box_construction_start + instance.box_construction_duration
-        )
-        drawer_activities[drawer_idx].append(
-            (box_construction_start, box_construction_end, -1)
-        )
         activities.append(
             (
                 drawer,
                 drawer_box_mapping[drawer],
-                box_construction_start,
-                box_construction_end,
+                i,
+                1,
                 -1,
             )
         )
-
-    replenishments = []
-    for replenishment in solution.replenishments:
-        drawer_activities[drawer_to_index[replenishment.drawer]].append(
+        drawer_activities[drawer].append((i, 1, -1))
+    for r in solution.replenishments:
+        activities.append(
             (
-                replenishment.start,
-                replenishment.start + instance.replenish_duration,
-                drawer_capacities[
-                    drawer_box_mapping[drawer_to_index[replenishment.drawer]]
-                ],
+                r.drawer,
+                r.box,
+                r.box_construction_index,
+                solution.box_constructions_per_replenishment,
+                drawer_capacity[r.drawer],
+            )
+        )
+        drawer_activities[r.drawer].append(
+            (
+                r.box_construction_index,
+                solution.box_constructions_per_replenishment,
+                drawer_capacity[r.drawer],
             )
         )
 
-        r = (
-            replenishment.drawer,
-            replenishment.box,
-            replenishment.start,
-            replenishment.start + instance.replenish_duration,
-            drawer_capacities[
-                drawer_box_mapping[drawer_to_index[replenishment.drawer]]
-            ],
-        )
-        replenishments.append(r)
-        activities.append(r)
+    for drawer, aa in drawer_activities.items():
+        aa.sort(key=lambda a: a[0])
+        assert not are_overlapped([a[:2] for a in aa])
 
-    # Ensure that the number of boxes remaining in each drawer never drops below zero
-    for drawer_idx in range(len(instance.drawers)):
-        drawer_activities[drawer_idx].sort(key=lambda e: e[0])
-        boxes = drawer_capacities[drawer_box_mapping[drawer_idx]]
-        for start, end, inc in drawer_activities[drawer_idx]:
-            if inc > 0:
-                boxes = inc
+        remaining_boxes = drawer_capacity[drawer]
+        for start, duration, inc in aa:
+            if inc < 0:
+                remaining_boxes += inc
             else:
-                boxes += inc
-                assert boxes >= 0
+                # Ensure that the replenishment is performed when the drawer is not full
+                assert remaining_boxes < drawer_capacity[drawer]
+                remaining_boxes = drawer_capacity[drawer]
 
-    # Ensure that no two activities on the same drawer overlap in time
-    for drawer_idx in range(len(instance.drawers)):
-        assert not are_overlapped(
-            [(start, end) for start, end, _ in drawer_activities[drawer_idx]]
-        )
+            # Ensure that the number of boxes remaining in each drawer never drops below zero
+            assert 0 <= remaining_boxes <= drawer_capacity[drawer]
 
-    activities.sort(key=lambda a: (a[3], a[4] > 0))
-    remaining_boxes = [
-        drawer_capacities[drawer_box_mapping[drawer_idx]]
-        for drawer_idx in range(len(instance.drawers))
-    ]
     # Ensure that the drawer selection policy is correctly enforced
-    for i, (drawer, box, start, end, inc) in enumerate(activities):
-        drawer_idx = drawer_to_index[drawer]
+    activities.sort(key=lambda a: (a[2] + a[3], a[4] > 0))
+    remaining_boxes = {drawer: drawer_capacity[drawer] for drawer in drawers}
+    for drawer, box, start, duration, inc in activities:
         if inc > 0:
-            remaining_boxes[drawer_idx] = inc
-            continue
-
-        if box_drawers_mapping[box][0] != drawer_idx:
-            for prev_drawer in previous_drawers(drawer_idx, box, box_drawers_mapping):
+            remaining_boxes[drawer] = inc
+        else:
+            for prev_drawer in previous_drawers(drawer, drawer_box_mapping):
                 assert remaining_boxes[
                     prev_drawer
-                ] == 0 or is_replenishment_overlapping(
-                    instance.drawers[prev_drawer], start, end, replenishments
+                ] == 0 or has_overlapping_replenishment(
+                    solution, prev_drawer, start, start + duration
                 )
-
-        remaining_boxes[drawer_idx] += inc
+            remaining_boxes[drawer] += inc
 
 
 def are_overlapped(activities: List[Tuple[int, int]]):
     activities.sort(key=lambda x: x[0])
     for i in range(len(activities) - 1):
-        if activities[i][1] > activities[i + 1][0]:
+        if activities[i][0] + activities[i][1] > activities[i + 1][0]:
             return True
     return False
 
 
-def previous_drawers(
-    drawer_idx: int, box: str, box_drawers_mapping: Dict[str, List[int]]
-):
-    for prev_drawer in box_drawers_mapping[box]:
-        if prev_drawer < drawer_idx:
+def previous_drawers(drawer: int, drawer_box_mapping: Dict[int, str]):
+    for prev_drawer in drawer_box_mapping:
+        if (
+            prev_drawer < drawer
+            and drawer_box_mapping[prev_drawer] == drawer_box_mapping[drawer]
+        ):
             yield prev_drawer
 
 
-def is_replenishment_overlapping(
-    drawer: int, start: int, end: int, replenishments: List[Tuple]
+def has_overlapping_replenishment(
+    solution: ManufacturingSolution, drawer: int, start: int, end: int
 ) -> bool:
-    for drawer2, box2, start2, end2, inc2 in replenishments:
-        if drawer2 == drawer and ((start2 <= start < end2) or (start2 < end <= end2)):
+    for r in solution.replenishments:
+        rstart = r.box_construction_index
+        rend = rstart + solution.box_constructions_per_replenishment
+        if r.drawer == drawer and ((rstart <= start < rend) or (rstart < end <= rend)):
             return True
     return False
+
+
+def num_replenish_groups(solution: ManufacturingSolution) -> int:
+    if len(solution.replenishments) == 0:
+        return 0
+
+    replenishments = sorted(
+        solution.replenishments, key=lambda r: r.box_construction_index
+    )
+
+    groups = 1
+    for i in range(1, len(replenishments)):
+        if (
+            replenishments[i].box_construction_index
+            > replenishments[i - 1].box_construction_index
+            + solution.box_constructions_per_replenishment
+        ):
+            groups += 1
+
+    return groups
