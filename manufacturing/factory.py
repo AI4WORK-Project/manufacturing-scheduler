@@ -467,26 +467,23 @@ class ManufacturingSchedulingFactory:
                 for drawer_idx in range(self.max_num_drawers[box_idx])
             )
 
-        def prev_nbox(box_idx, drawer_idx, order_idx):
-            # TODO(perf): improve
-            prev_order_idx = -1
-            for i in nbox_vars[box_idx][drawer_idx]:
-                if i < order_idx:
-                    prev_order_idx = max(prev_order_idx, i)
-            return nbox_vars[box_idx][drawer_idx][prev_order_idx]
-
         # prevent replenishment when drawer is full
         for box_idx, box in enumerate(self.boxes):
             for drawer_idx in range(self.max_num_drawers[box_idx]):
-                for order_idx in range(
-                    0,
-                    len(self.orders),
-                    self.instance.box_constructions_per_replenishment,
-                ):
-                    model.add(
-                        prev_nbox(box_idx, drawer_idx, order_idx)
-                        < self.drawer_capacities[box_idx]
-                    ).only_enforce_if(replenish_vars[box_idx][drawer_idx][order_idx])
+                prev_nbox = nbox_vars[box_idx][drawer_idx][-1]
+                for order_idx in range(len(self.orders)):
+                    if (
+                        order_idx % self.instance.box_constructions_per_replenishment
+                        == 0
+                    ):
+                        model.add(
+                            prev_nbox < self.drawer_capacities[box_idx]
+                        ).only_enforce_if(
+                            replenish_vars[box_idx][drawer_idx][order_idx]
+                        )
+
+                    if order_idx in nbox_vars[box_idx][drawer_idx]:
+                        prev_nbox = nbox_vars[box_idx][drawer_idx][order_idx]
 
         return nbox_vars, is_used_vars
 
