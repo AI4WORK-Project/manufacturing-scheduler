@@ -292,16 +292,16 @@
                         "type": "string",
                         "description": "Type of box replenished."
                     },
-                    "box_construction_index": {
+                    "order_id": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "Index of the box construction activity. The replenishment starts at the beginning of this activity."
+                        "description": "The replenishment starts when the filling operator processes the order with this ID."
                     }
                 },
                 "required": [
                     "drawer",
                     "box",
-                    "box_construction_index"
+                    "order_id"
                 ],
                 "additionalProperties": false
             }
