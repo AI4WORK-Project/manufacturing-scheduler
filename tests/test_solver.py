@@ -8,7 +8,6 @@ import pathlib
 import os
 from typing import Tuple, List, Optional, Dict
 import pytest
-import json
 
 
 def test_instance0():
@@ -51,6 +50,19 @@ def validate_solution(solution: ManufacturingSolution):
         d.drawer for d in solution.drawers.lower_level + solution.drawers.upper_level
     ]
 
+    box_filling_durations = dict(
+        (bfd.box, bfd.filling_duration) for bfd in solution.box_filling_durations
+    )
+
+    orders = []
+    for operator_order_list in solution.operator_order_lists:
+        start = 0
+        for order in operator_order_list.orders:
+            orders.append(((start, operator_order_list.operator), order))
+            start += box_filling_durations[order.box]
+    orders.sort(key=lambda order: order[0])
+    order_index = {order.id: i for i, (_, order) in enumerate(orders)}
+
     dbm_boxes = set(d.box for d in solution.drawer_box_mapping)
     assert set(boxes) == dbm_boxes
 
@@ -63,9 +75,9 @@ def validate_solution(solution: ManufacturingSolution):
 
     for r in solution.replenishments:
         assert drawer_box_mapping[r.drawer] == r.box
-        assert r.box_construction_index < len(solution.orders.box)
+        assert r.order_id in set(solution.orders.order)
 
-    rep_indexes = [r.box_construction_index for r in solution.replenishments]
+    rep_indexes = [order_index[r.order_id] for r in solution.replenishments]
     rep_indexes.sort()
     for i in range(len(rep_indexes) - 1):
         assert (
@@ -101,14 +113,14 @@ def validate_solution(solution: ManufacturingSolution):
             (
                 r.drawer,
                 r.box,
-                r.box_construction_index,
+                order_index[r.order_id],
                 solution.box_constructions_per_replenishment,
                 drawer_capacity[r.drawer],
             )
         )
         drawer_activities[r.drawer].append(
             (
-                r.box_construction_index,
+                order_index[r.order_id],
                 solution.box_constructions_per_replenishment,
                 drawer_capacity[r.drawer],
             )
@@ -141,7 +153,7 @@ def validate_solution(solution: ManufacturingSolution):
                 assert remaining_boxes[
                     prev_drawer
                 ] == 0 or has_overlapping_replenishment(
-                    solution, prev_drawer, start, start + duration
+                    solution, order_index, prev_drawer, start, start + duration
                 )
             remaining_boxes[drawer] += inc
 
@@ -164,10 +176,14 @@ def previous_drawers(drawer: int, drawer_box_mapping: Dict[int, str]):
 
 
 def has_overlapping_replenishment(
-    solution: ManufacturingSolution, drawer: int, start: int, end: int
+    solution: ManufacturingSolution,
+    order_index: Dict[int, int],
+    drawer: int,
+    start: int,
+    end: int,
 ) -> bool:
     for r in solution.replenishments:
-        rstart = r.box_construction_index
+        rstart = order_index[r.order_id]
         rend = rstart + solution.box_constructions_per_replenishment
         if r.drawer == drawer and ((rstart <= start < rend) or (rstart < end <= rend)):
             return True
@@ -178,15 +194,28 @@ def num_replenish_groups(solution: ManufacturingSolution) -> int:
     if len(solution.replenishments) == 0:
         return 0
 
+    box_filling_durations = dict(
+        (bfd.box, bfd.filling_duration) for bfd in solution.box_filling_durations
+    )
+
+    orders = []
+    for operator_order_list in solution.operator_order_lists:
+        start = 0
+        for order in operator_order_list.orders:
+            orders.append(((start, operator_order_list.operator), order))
+            start += box_filling_durations[order.box]
+    orders.sort(key=lambda order: order[0])
+    order_index = {order.id: i for i, (_, order) in enumerate(orders)}
+
     replenishments = sorted(
-        solution.replenishments, key=lambda r: r.box_construction_index
+        solution.replenishments, key=lambda r: order_index[r.order_id]
     )
 
     groups = 1
     for i in range(1, len(replenishments)):
         if (
-            replenishments[i].box_construction_index
-            > replenishments[i - 1].box_construction_index
+            order_index[replenishments[i].order_id]
+            > order_index[replenishments[i - 1].order_id]
             + solution.box_constructions_per_replenishment
         ):
             groups += 1

@@ -23,7 +23,7 @@ class DrawerWithBox:
 class Replenishment:
     drawer: int
     box: str
-    box_construction_index: int
+    order_id: int
 
 
 @dataclass_json

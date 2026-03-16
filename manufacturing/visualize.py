@@ -41,6 +41,19 @@ def plot_solution(
     }
     drawer_capacities = {dc.box: dc.capacity for dc in instance.drawer_capacities}
 
+    box_filling_durations = dict(
+        (bfd.box, bfd.filling_duration) for bfd in instance.box_filling_durations
+    )
+
+    orders = []
+    for operator_order_list in solution.operator_order_lists:
+        start = 0
+        for order in operator_order_list.orders:
+            orders.append(((start, operator_order_list.operator), order))
+            start += box_filling_durations[order.box]
+    orders.sort(key=lambda order: order[0])
+    order_index = {order.id: i for i, (_, order) in enumerate(orders)}
+
     remaining_boxes = [[] for drawer in range(len(solution.drawer_box_mapping))]
 
     # Add box constructions
@@ -76,18 +89,17 @@ def plot_solution(
     # Add replenishments
     for replenishment in solution.replenishments:
         drawer_idx = drawer_index[replenishment.drawer]
+        order_idx = order_index[replenishment.order_id]
 
         # Add replenishment bar
         fig.add_trace(
             go.Scatter(
                 x=[
-                    replenishment.box_construction_index,
-                    replenishment.box_construction_index
-                    + instance.box_constructions_per_replenishment,
-                    replenishment.box_construction_index
-                    + instance.box_constructions_per_replenishment,
-                    replenishment.box_construction_index,
-                    replenishment.box_construction_index,
+                    order_idx,
+                    order_idx + instance.box_constructions_per_replenishment,
+                    order_idx + instance.box_constructions_per_replenishment,
+                    order_idx,
+                    order_idx,
                 ],
                 y=[0, 0, 2, 2, 0],
                 fill="toself",
@@ -102,23 +114,19 @@ def plot_solution(
 
         # Add text annotation
         fig.add_annotation(
-            x=replenishment.box_construction_index
-            + instance.box_constructions_per_replenishment / 2,
+            x=order_idx + instance.box_constructions_per_replenishment / 2,
             y=1,
             text=f"{drawer_box_mapping[replenishment.drawer]}{replenishment.drawer}",
             showarrow=False,
             font=dict(color="black"),
         )
 
-        replenishment_end = (
-            replenishment.box_construction_index
-            + instance.box_constructions_per_replenishment
-        )
+        replenishment_end = order_idx + instance.box_constructions_per_replenishment
         remaining_boxes[drawer_idx].append(
             (
                 replenishment_end,
                 drawer_capacities[drawer_box_mapping[replenishment.drawer]],
-                replenishment.box_construction_index,
+                order_idx,
                 replenishment_end,
             )
         )

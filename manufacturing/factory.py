@@ -2,20 +2,11 @@ from manufacturing import ManufacturingInstance, ManufacturingSolution
 from manufacturing.dataclasses.instance import Order, SIZES
 from manufacturing.dataclasses.solution import OperatorOrderList
 
-import collections
 from typing import Tuple, List, Optional, Dict
 from ortools.sat.python import cp_model
 import logging
 
 from manufacturing.dataclasses import solution
-
-
-order_type = collections.namedtuple(
-    "order_type", "id box operator filling_duration start"
-)
-optional_activity_type = collections.namedtuple(
-    "optional_activity_type", "start duration interval is_present params"
-)
 
 
 class ManufacturingSchedulingFactory:
@@ -54,7 +45,7 @@ class ManufacturingSchedulingFactory:
 
     def get_machine_order_list(
         self,
-    ) -> Tuple[List[order_type], List[OperatorOrderList]]:
+    ) -> Tuple[List[Order], List[OperatorOrderList]]:
         operator_order_lists = [
             OperatorOrderList(operator, [])
             for operator in range(self.instance.operators)
@@ -73,18 +64,11 @@ class ManufacturingSchedulingFactory:
         for operator_order_list in operator_order_lists:
             start = 0
             for order in operator_order_list.orders:
-                orders.append(
-                    order_type(
-                        id=order.id,
-                        box=order.box,
-                        operator=operator_order_list.operator,
-                        filling_duration=box_filling_durations[order.box],
-                        start=start,
-                    )
-                )
+                orders.append(((start, operator_order_list.operator), order))
                 start += box_filling_durations[order.box]
 
-        orders.sort(key=lambda order: (order.start, order.operator))
+        orders.sort(key=lambda order: order[0])
+        orders = [order for _, order in orders]
         return orders, operator_order_lists
 
     def calculate_max_num_drawers(self) -> List[int]:
@@ -606,7 +590,9 @@ class ManufacturingSchedulingFactory:
                         ):
                             drawer = relative_to_absolute_drawer[(box_idx, drawer_idx)]
                             replenishments.append(
-                                solution.Replenishment(drawer, box.box, order_idx)
+                                solution.Replenishment(
+                                    drawer, box.box, self.orders[order_idx].id
+                                )
                             )
             # replenishments.sort(key=lambda r: (r.start, r.drawer))
 

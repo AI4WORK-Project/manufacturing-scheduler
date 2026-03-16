@@ -3,47 +3,49 @@
     "boxes": [
         {
             "box": "A",
-            "size": "S"
+            "size": "L"
         },
         {
             "box": "B",
-            "size": "S"
+            "size": "M"
         },
         {
             "box": "C",
-            "size": "S"
+            "size": "M"
         },
         {
             "box": "D",
-            "size": "M"
+            "size": "S"
         },
         {
             "box": "E",
-            "size": "M"
+            "size": "S"
         },
         {
             "box": "F",
-            "size": "L"
+            "size": "S"
         }
     ],
     "drawers": {
-        "upper_level": [
+        "lower_level": [
             {
                 "drawer": 1,
-                "size": "S"
+                "size": "L"
             },
             {
                 "drawer": 2,
-                "size": "S"
+                "size": "L"
             },
             {
                 "drawer": 3,
-                "size": "S"
+                "size": "L"
             },
             {
                 "drawer": 4,
-                "size": "S"
-            },
+                "size": "L"
+            }
+        ],
+        "upper_level": [
             {
                 "drawer": 5,
                 "size": "M"
@@ -55,24 +57,22 @@
             {
                 "drawer": 7,
                 "size": "M"
-            }
-        ],
-        "lower_level": [
+            },
             {
                 "drawer": 8,
-                "size": "L"
+                "size": "S"
             },
             {
                 "drawer": 9,
-                "size": "L"
+                "size": "S"
             },
             {
                 "drawer": 10,
-                "size": "L"
+                "size": "S"
             },
             {
                 "drawer": 11,
-                "size": "L"
+                "size": "S"
             }
         ]
     },
@@ -103,7 +103,6 @@
         }
     ],
     "box_constructions_per_replenishment": 10,
-    "minimum_remaining_boxes": 2,
     "box_filling_durations": [
         {
             "box": "A",
@@ -130,6 +129,7 @@
             "filling_duration": 15
         }
     ],
+    "minimum_remaining_boxes": 2,
     "orders": {
         "date": [
             "2025-09-19",
