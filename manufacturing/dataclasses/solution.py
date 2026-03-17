@@ -24,6 +24,7 @@ class Replenishment:
     drawer: int
     box: str
     order_id: int
+    start: int
 
 
 @dataclass_json
