@@ -577,9 +577,6 @@ class ManufacturingSchedulingFactory:
                 for i, drawer in enumerate(box_to_drawers[box.box]):
                     relative_to_absolute_drawer[(box_idx, i)] = drawer
 
-            box_construction_duration = sum(
-                d.filling_duration for d in self.instance.box_filling_durations
-            ) // (len(self.instance.box_filling_durations) * self.instance.operators)
             replenishments = []
             for box_idx, box in enumerate(self.boxes):
                 for drawer_idx in range(self.max_num_drawers[box_idx]):
@@ -592,13 +589,12 @@ class ManufacturingSchedulingFactory:
                             self.replenish_vars[box_idx][drawer_idx][order_idx]
                         ):
                             drawer = relative_to_absolute_drawer[(box_idx, drawer_idx)]
-                            start = order_idx * box_construction_duration
                             replenishments.append(
                                 solution.Replenishment(
-                                    drawer, box.box, self.orders[order_idx].id, start
+                                    drawer, box.box, self.orders[order_idx].id
                                 )
                             )
-            replenishments.sort(key=lambda r: r.start)
+            # replenishments.sort(key=lambda r: (r.start, r.drawer))
 
             box_constructions = []
             for order_idx, order in enumerate(self.orders):
