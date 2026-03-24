@@ -25,6 +25,7 @@ class Box:
 class Drawer:
     drawer: int
     size: Size
+    enabled: bool
 
 
 @dataclass_json

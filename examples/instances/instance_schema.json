@@ -35,7 +35,7 @@
         },
         "drawers": {
             "type": "object",
-            "description": "Drawers available for storing boxes, organized by lower and upper levels. Any drawer not listed is unavailable.",
+            "description": "Drawers available for storing boxes, organized by lower and upper levels.",
             "properties": {
                 "lower_level": {
                     "type": "array",
@@ -44,7 +44,8 @@
                         "type": "object",
                         "required": [
                             "drawer",
-                            "size"
+                            "size",
+                            "enabled"
                         ],
                         "properties": {
                             "drawer": {
@@ -59,6 +60,10 @@
                                     "L"
                                 ],
                                 "description": "Size of the drawer."
+                            },
+                            "enabled": {
+                                "type": "boolean",
+                                "description": "Whether the drawer is enabled for use."
                             }
                         }
                     }
@@ -70,7 +75,8 @@
                         "type": "object",
                         "required": [
                             "drawer",
-                            "size"
+                            "size",
+                            "enabled"
                         ],
                         "properties": {
                             "drawer": {
@@ -85,6 +91,10 @@
                                     "L"
                                 ],
                                 "description": "Size of the drawer."
+                            },
+                            "enabled": {
+                                "type": "boolean",
+                                "description": "Whether the drawer is enabled for use."
                             }
                         }
                     }

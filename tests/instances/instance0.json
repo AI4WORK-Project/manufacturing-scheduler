@@ -3,76 +3,92 @@
     "boxes": [
         {
             "box": "A",
-            "size": "S"
+            "size": "L"
         },
         {
             "box": "B",
-            "size": "S"
+            "size": "M"
         },
         {
             "box": "C",
-            "size": "S"
+            "size": "M"
         },
         {
             "box": "D",
-            "size": "M"
+            "size": "S"
         },
         {
             "box": "E",
-            "size": "M"
+            "size": "S"
         },
         {
             "box": "F",
-            "size": "L"
+            "size": "S"
         }
     ],
     "drawers": {
-        "upper_level": [
+        "lower_level": [
             {
                 "drawer": 1,
-                "size": "S"
+                "size": "L",
+                "enabled": true
             },
             {
                 "drawer": 2,
-                "size": "S"
+                "size": "L",
+                "enabled": true
             },
             {
                 "drawer": 3,
-                "size": "S"
+                "size": "L",
+                "enabled": true
             },
             {
                 "drawer": 4,
-                "size": "S"
-            },
+                "size": "L",
+                "enabled": true
+            }
+        ],
+        "upper_level": [
             {
                 "drawer": 5,
-                "size": "M"
+                "size": "M",
+                "enabled": true
             },
             {
                 "drawer": 6,
-                "size": "M"
+                "size": "M",
+                "enabled": true
             },
             {
                 "drawer": 7,
-                "size": "M"
-            }
-        ],
-        "lower_level": [
+                "size": "M",
+                "enabled": true
+            },
             {
                 "drawer": 8,
-                "size": "L"
+                "size": "S",
+                "enabled": true
             },
             {
                 "drawer": 9,
-                "size": "L"
+                "size": "S",
+                "enabled": true
             },
             {
                 "drawer": 10,
-                "size": "L"
+                "size": "S",
+                "enabled": true
             },
             {
                 "drawer": 11,
-                "size": "L"
+                "size": "S",
+                "enabled": true
+            },
+            {
+                "drawer": 12,
+                "size": "S",
+                "enabled": false
             }
         ]
     },

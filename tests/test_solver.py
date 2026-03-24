@@ -43,11 +43,14 @@ def validate_solution(solution: ManufacturingSolution):
     drawer_size = {
         d.drawer: SIZES[d.size]
         for d in solution.drawers.lower_level + solution.drawers.upper_level
+        if d.enabled
     }
 
     boxes = [b.box for b in solution.boxes]
     drawers = [
-        d.drawer for d in solution.drawers.lower_level + solution.drawers.upper_level
+        d.drawer
+        for d in solution.drawers.lower_level + solution.drawers.upper_level
+        if d.enabled
     ]
 
     box_filling_durations = dict(
@@ -96,6 +99,7 @@ def validate_solution(solution: ManufacturingSolution):
     drawer_activities = {
         d.drawer: []
         for d in solution.drawers.lower_level + solution.drawers.upper_level
+        if d.enabled
     }
     for i, drawer in enumerate(solution.box_constructions):
         activities.append(

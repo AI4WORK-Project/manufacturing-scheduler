@@ -30,49 +30,65 @@
         "lower_level": [
             {
                 "drawer": 1,
-                "size": "L"
+                "size": "L",
+                "enabled": true
             },
             {
                 "drawer": 2,
-                "size": "L"
+                "size": "L",
+                "enabled": true
             },
             {
                 "drawer": 3,
-                "size": "L"
+                "size": "L",
+                "enabled": true
             },
             {
                 "drawer": 4,
-                "size": "L"
+                "size": "L",
+                "enabled": true
             }
         ],
         "upper_level": [
             {
                 "drawer": 5,
-                "size": "M"
+                "size": "M",
+                "enabled": true
             },
             {
                 "drawer": 6,
-                "size": "M"
+                "size": "M",
+                "enabled": true
             },
             {
                 "drawer": 7,
-                "size": "M"
+                "size": "M",
+                "enabled": true
             },
             {
                 "drawer": 8,
-                "size": "S"
+                "size": "S",
+                "enabled": true
             },
             {
                 "drawer": 9,
-                "size": "S"
+                "size": "S",
+                "enabled": true
             },
             {
                 "drawer": 10,
-                "size": "S"
+                "size": "S",
+                "enabled": true
             },
             {
                 "drawer": 11,
-                "size": "S"
+                "size": "S",
+                "enabled": true
+            },
+            {
+                "drawer": 12,
+                "size": "S",
+                "enabled": false
             }
         ]
     },

@@ -40,6 +40,7 @@ class ManufacturingSchedulingFactory:
 
     def get_drawers(self):
         drawers = self.instance.drawers.lower_level + self.instance.drawers.upper_level
+        drawers = [d for d in drawers if d.enabled]
         drawers.sort(key=lambda d: (SIZES[d.size], d.drawer))
         return drawers
 
