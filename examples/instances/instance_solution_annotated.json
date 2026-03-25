@@ -5696,6 +5696,9 @@
     // Boolean flag that indicates if the solution is optimal or feasible.
     "is_solution_optimal": true,
 
+    // Fragmentation index representing the degree of fragmentation among replenishment groups, expressed as a percentage (0-100%).
+    "index_of_fragmentation": 0.0,
+
     // Mapping of drawers to assigned boxes.
     "drawer_box_mapping": [
         {

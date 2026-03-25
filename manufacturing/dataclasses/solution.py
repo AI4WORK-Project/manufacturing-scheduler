@@ -39,6 +39,7 @@ class SolverInfo:
 class ManufacturingSolution(ManufacturingInstance):
     operator_order_lists: List[OperatorOrderList]
     is_solution_optimal: bool
+    index_of_fragmentation: float
     drawer_box_mapping: List[DrawerWithBox]
     replenishments: List[Replenishment]
     box_constructions: List[int]

@@ -4,6 +4,7 @@ from manufacturing.dataclasses.solution import OperatorOrderList
 
 from typing import Tuple, List, Optional, Dict
 from ortools.sat.python import cp_model
+import math
 import logging
 
 from manufacturing.dataclasses import solution
@@ -611,6 +612,21 @@ class ManufacturingSchedulingFactory:
                     relative_to_absolute_drawer[(box_idx, used_drawer_idx)]
                 )
 
+            replenish_groups_ub = len(self.orders) // (
+                2 * self.instance.box_constructions_per_replenishment
+            )
+            replenish_groups_lb = math.ceil(
+                len(self.orders)
+                / float(max(self.drawer_capacities) * len(self.drawers))
+                - 1
+            )
+            # replenish_groups_lb = max(replenish_groups_lb, solver.best_objective_bound)
+            index_of_fragmentation = (
+                (solver.objective_value - replenish_groups_lb)
+                / (replenish_groups_ub - replenish_groups_lb)
+                * 100
+            )
+
             solver_info = solution.SolverInfo(
                 solver.objective_value, solver.best_objective_bound, solver.user_time
             )
@@ -626,6 +642,7 @@ class ManufacturingSchedulingFactory:
                 self.instance.orders,
                 self.operator_order_lists,
                 status == cp_model.OPTIMAL,
+                index_of_fragmentation,
                 drawer_box_mapping,
                 replenishments,
                 box_constructions,

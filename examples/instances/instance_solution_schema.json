@@ -266,6 +266,12 @@
             "type": "boolean",
             "description": "Boolean flag indicating if the solution found is optimal (true) or just feasible (false)."
         },
+        "index_of_fragmentation": {
+            "type": "number",
+            "description": "Fragmentation index representing the degree of fragmentation among replenishment groups, expressed as a percentage (0-100%).",
+            "minimum": 0,
+            "maximum": 100
+        },
         "drawer_box_mapping": {
             "type": "array",
             "description": "List mapping each drawer to its assigned box type.",
@@ -360,6 +366,7 @@
         "orders",
         "operator_order_lists",
         "is_solution_optimal",
+        "index_of_fragmentation",
         "drawer_box_mapping",
         "replenishments",
         "box_constructions",
