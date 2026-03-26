@@ -17,4 +17,4 @@ print("Status Code:", response.status_code)
 if response.ok:
     solution: ManufacturingSolution = ManufacturingSolution.from_dict(response.json())
     instance: ManufacturingInstance = ManufacturingInstance.from_dict(instance)
-    plot_solution(instance, solution)
+    plot_solution(solution)

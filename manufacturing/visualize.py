@@ -1,48 +1,19 @@
-from manufacturing import ManufacturingInstance, ManufacturingSolution
-from typing import List, Optional
+from manufacturing import ManufacturingSolution
+from typing import Optional
+import plotly.express as px
 import plotly.graph_objects as go
-import plotly.colors as colors
-
-
-def get_cmap(num_colors) -> List:
-    # Use plotly's qualitative color palette
-    if num_colors <= len(colors.qualitative.Plotly):
-        return colors.qualitative.Plotly[:num_colors]
-    else:
-        # Generate additional colors using plotly's sample_colorscale
-        base_colors = colors.qualitative.Plotly
-        additional_colors = colors.sample_colorscale(
-            "hsv",
-            [
-                i / (num_colors - len(base_colors))
-                for i in range(num_colors - len(base_colors))
-            ],
-        )
-        return base_colors + additional_colors
+import pandas as pd
 
 
 def plot_solution(
-    instance: ManufacturingInstance,
     solution: ManufacturingSolution,
-    plot_box_constructions: bool = False,
     image_path: Optional[str] = None,
     html_path: Optional[str] = None,
-) -> None:
-    """Plots the resulting schedule."""
-
+):
     fig = go.Figure()
 
-    color_palette = get_cmap(len(solution.drawer_box_mapping))
-    drawer_index = dict(
-        (drawer.drawer, idx) for idx, drawer in enumerate(solution.drawer_box_mapping)
-    )
-    drawer_box_mapping = {
-        drawer.drawer: drawer.box for drawer in solution.drawer_box_mapping
-    }
-    drawer_capacities = {dc.box: dc.capacity for dc in instance.drawer_capacities}
-
     box_filling_durations = dict(
-        (bfd.box, bfd.filling_duration) for bfd in instance.box_filling_durations
+        (bfd.box, bfd.filling_duration) for bfd in solution.box_filling_durations
     )
 
     orders = []
@@ -51,127 +22,76 @@ def plot_solution(
         for order in operator_order_list.orders:
             orders.append(((start, operator_order_list.operator), order))
             start += box_filling_durations[order.box]
-    orders.sort(key=lambda order: order[0])
-    order_index = {order.id: i for i, (_, order) in enumerate(orders)}
 
-    remaining_boxes = [[] for drawer in range(len(solution.drawer_box_mapping))]
+    orders.sort(key=lambda order: order[0])
+    orders = [order for _, order in orders]
+    order_index = {o.id: i for i, o in enumerate(orders)}
+
+    drawer_index = {
+        drawer.drawer: idx for idx, drawer in enumerate(solution.drawer_box_mapping)
+    }
+
+    activities = []
 
     # Add box constructions
     for i, drawer in enumerate(solution.box_constructions):
-        drawer_idx = drawer_index[drawer]
-
-        if plot_box_constructions:
-            # Add box construction bar
-            fig.add_trace(
-                go.Scatter(
-                    x=[i, i + 1, i + 1, i, i],
-                    y=[4, 4, 6, 6, 4],
-                    fill="toself",
-                    fillcolor=color_palette[drawer_idx],
-                    line=dict(color=color_palette[drawer_idx]),
-                    mode="lines",
-                    name=f"Construction [Box {drawer_box_mapping[drawer]}, Drawer {drawer}]",
-                    showlegend=False,
-                )
+        activities.append(
+            dict(
+                Task=f"Drawer {drawer}",
+                Drawer=f"Drawer {drawer}",
+                StartIdx=i,
+                EndIdx=i + 1,
             )
-
-            # Add text annotation
-            fig.add_annotation(
-                x=i + 0.5,
-                y=5,
-                text=f"{drawer_box_mapping[drawer]}{drawer}",
-                showarrow=False,
-                font=dict(color="black"),
-            )
-
-        remaining_boxes[drawer_idx].append((i, -1, i, i + 1))
+        )
 
     # Add replenishments
     for replenishment in solution.replenishments:
-        drawer_idx = drawer_index[replenishment.drawer]
-        order_idx = order_index[replenishment.order_id]
-
-        # Add replenishment bar
-        fig.add_trace(
-            go.Scatter(
-                x=[
-                    order_idx,
-                    order_idx + instance.box_constructions_per_replenishment,
-                    order_idx + instance.box_constructions_per_replenishment,
-                    order_idx,
-                    order_idx,
-                ],
-                y=[0, 0, 2, 2, 0],
-                fill="toself",
-                fillcolor=color_palette[drawer_idx],
-                line=dict(color=color_palette[drawer_idx]),
-                mode="lines",
-                name=f"Replenishment [Box {drawer_box_mapping[replenishment.drawer]}, Drawer {replenishment.drawer}]",
-                showlegend=False,
-                hoverinfo="text",
+        i = order_index[replenishment.order_id]
+        activities.append(
+            dict(
+                Task=f"Replenishment",
+                Drawer=f"Drawer {replenishment.drawer}",
+                StartIdx=i,
+                EndIdx=i + solution.box_constructions_per_replenishment,
             )
         )
 
-        # Add text annotation
-        fig.add_annotation(
-            x=order_idx + instance.box_constructions_per_replenishment / 2,
-            y=1,
-            text=f"{drawer_box_mapping[replenishment.drawer]}{replenishment.drawer}",
-            showarrow=False,
-            font=dict(color="black"),
-        )
+    tasks = [f"Drawer {d}" for d in sorted(drawer_index.keys())] + ["Replenishment"]
+    tasks.reverse()
 
-        replenishment_end = order_idx + instance.box_constructions_per_replenishment
-        remaining_boxes[drawer_idx].append(
-            (
-                replenishment_end,
-                drawer_capacities[drawer_box_mapping[replenishment.drawer]],
-                order_idx,
-                replenishment_end,
-            )
-        )
+    df = pd.DataFrame(activities)
+    reference_date = pd.Timestamp.now()
+    df["Start"] = reference_date + pd.to_timedelta(df["StartIdx"], unit="s")
+    df["End"] = reference_date + pd.to_timedelta(df["EndIdx"], unit="s")
 
-    # # Add remaining boxes text
-    # for drawer in solution.drawer_box_mapping:
-    #     drawer_idx = drawer_index[drawer.drawer]
-    #     remaining_boxes[drawer_idx].sort(key=lambda e: e[2])
-    #     boxes = drawer_capacities[drawer_box_mapping[drawer.drawer]]
-    #     for t, inc, start_activity, end_activity in remaining_boxes[drawer_idx]:
-    #         if inc > 0:
-    #             # replenishment
-    #             assert boxes < drawer_capacities[drawer_box_mapping[drawer.drawer]]
-    #             boxes = inc
-    #             y = -1
-    #         else:
-    #             # box construction
-    #             boxes += inc
-    #             y = 3
-    #         assert boxes >= 0
-
-    #         fig.add_annotation(
-    #             x=(start_activity + end_activity) / 2,
-    #             y=y,
-    #             text=str(boxes),
-    #             showarrow=False,
-    #             font=dict(color="black"),
-    #         )
-
-    # Update layout
-    # FIXME
+    # Create timeline plot
+    fig = px.timeline(df, x_start="Start", x_end="End", y="Task", color="Drawer")
+    fig.update_xaxes(showticklabels=False)
+    fig.update_yaxes(categoryorder="array", categoryarray=tasks)
     fig.update_layout(
-        # title="Manufacturing Schedule",
-        xaxis_title="Replenishments",
-        xaxis=dict(range=[0, len(instance.orders.order)], visible=False),
-        yaxis=dict(range=[-4, 6], visible=False),
-        showlegend=False,
-        width=1200,
-        height=600,
         plot_bgcolor="white",
+        height=400,
+        xaxis_title="",
+        yaxis_title="",
+        showlegend=False,
     )
+    fig.update_traces(hovertemplate=None, hoverinfo="skip")
 
-    # Add grid
-    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="lightgray")
-    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor="lightgray")
+    # Map drawer names to colors
+    color_map = {}
+    for trace in fig.data:
+        drawer_name = trace.name
+        color_map[drawer_name] = trace.marker.color
+
+    # Update y-axis tick labels with colors
+    y_ticks = fig.layout.yaxis.categoryarray
+    fig.update_yaxes(
+        tickvals=y_ticks,
+        ticktext=[
+            f"<span style='color:{color_map.get(t, 'black')}'>{t}</span>"
+            for t in y_ticks
+        ],
+    )
 
     if image_path is None and html_path is None:
         fig.show()
