@@ -1,17 +1,12 @@
 import os
 import logging
-import json
 import pathlib
 from flask import Flask, Response, request, send_file
 from manufacturing import (
-    ManufacturingProblemData,
-    ManufacturingConfiguration,
     ManufacturingInstance,
     ManufacturingSchedulingFactory,
     plot_solution,
 )
-from manufacturing.dataclasses.instance import Order, OperatorOrderList
-from typing import List
 
 logging.basicConfig(level=logging.INFO)
 
@@ -30,37 +25,7 @@ def schedule():
     try:
         logging.info("Schedule request received!")
 
-        with open("configuration.json") as f:
-            configuration: ManufacturingConfiguration = (
-                ManufacturingConfiguration.from_dict(json.load(f))
-            )
-
-        problem_data: ManufacturingProblemData = ManufacturingProblemData.from_dict(
-            request.json
-        )
-
-        operator_order_lists: List[OperatorOrderList] = [
-            OperatorOrderList(operator, [])
-            for operator in range(configuration.operators)
-        ]
-        for i, order_id in enumerate(problem_data.orders.order):
-            operator_order_lists[i % configuration.operators].orders.append(
-                Order(id=order_id, box=problem_data.orders.box[i])
-            )
-
-        instance: ManufacturingInstance = ManufacturingInstance(
-            start_time=problem_data.start_time,
-            operators=configuration.operators,
-            drawers=problem_data.drawers,
-            drawer_capacities=configuration.drawer_capacities,
-            replenish_windows=problem_data.replenish_windows,
-            replenish_duration=configuration.replenish_duration,
-            box_construction_duration=configuration.box_construction_duration,
-            box_filling_durations=configuration.box_filling_durations,
-            orders=problem_data.orders,
-            operator_order_lists=operator_order_lists,
-        )
-
+        instance: ManufacturingInstance = ManufacturingInstance.from_dict(request.json)
         factory = ManufacturingSchedulingFactory(instance)
 
         time_limit = request.args.get("time_limit", None, type=int)
@@ -69,13 +34,7 @@ def schedule():
         solution = factory.get_solution(time_limit=time_limit)
         if solution is not None:
             logging.info(f"Solution found")
-            plot_solution(
-                instance,
-                solution,
-                plot_box_constructions=False,
-                image_path=plot_img_path,
-                html_path=plot_html_path,
-            )
+            plot_solution(solution, image_path=plot_img_path, html_path=plot_html_path)
         else:
             logging.info("No solution has been found for the given problem")
             return Response(
@@ -90,19 +49,6 @@ def schedule():
         )
 
     return Response(solution.to_json(), mimetype="application/json", status=200)
-
-
-# TODO: remove
-# @app.route("/last_schedule_plot_image", methods=["GET"])
-# def last_schedule_plot_image():
-#     logging.info("Received request for the last generated schedule plot image.")
-#     if not os.path.exists(plot_img_path):
-#         return Response(
-#             '{"message":"Plot image not found"}',
-#             mimetype="application/json",
-#             status=404,
-#         )
-#     return send_file(plot_img_path, mimetype="image/png")
 
 
 @app.route("/last_schedule_gantt", methods=["GET"])

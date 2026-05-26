@@ -2,42 +2,161 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
     "properties": {
-        "start_time": {
-            "type": "string",
-            "pattern": "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
-            "description": "Start time in HH:MM:SS format (24-hour format)."
+        "operators": {
+            "type": "integer",
+            "description": "Number of packaging operators.",
+            "minimum": 1
         },
-        "drawers": {
+        "boxes": {
             "type": "array",
-            "description": "List of available drawers. If a drawer is not listed here, it is considered unavailable.",
-            "items": {
-                "type": "integer",
-                "description": "Drawer identifier"
-            }
-        },
-        "replenish_windows": {
-            "type": "array",
-            "description": "List of temporal windows (in time units, e.g., seconds) during which replenishment activities can occur.",
+            "description": "Box types with their sizes.",
             "items": {
                 "type": "object",
                 "properties": {
-                    "start": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Start time of the replenishment window."
+                    "box": {
+                        "type": "string",
+                        "description": "Identifier of the box type."
                     },
-                    "end": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "End time of the replenishment window."
+                    "size": {
+                        "type": "string",
+                        "enum": [
+                            "S",
+                            "M",
+                            "L"
+                        ],
+                        "description": "Size of the box (Small, Medium, Large)."
                     }
                 },
                 "required": [
-                    "start",
-                    "end"
+                    "box",
+                    "size"
+                ]
+            }
+        },
+        "drawers": {
+            "type": "object",
+            "description": "Drawers available for storing boxes, organized by lower and upper levels.",
+            "properties": {
+                "lower_level": {
+                    "type": "array",
+                    "description": "Drawers on the lower level.",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "drawer",
+                            "size",
+                            "enabled"
+                        ],
+                        "properties": {
+                            "drawer": {
+                                "type": "integer",
+                                "description": "Drawer number."
+                            },
+                            "size": {
+                                "type": "string",
+                                "enum": [
+                                    "S",
+                                    "M",
+                                    "L"
+                                ],
+                                "description": "Size of the drawer."
+                            },
+                            "enabled": {
+                                "type": "boolean",
+                                "description": "Whether the drawer is enabled for use."
+                            }
+                        }
+                    }
+                },
+                "upper_level": {
+                    "type": "array",
+                    "description": "Drawers on the upper level.",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "drawer",
+                            "size",
+                            "enabled"
+                        ],
+                        "properties": {
+                            "drawer": {
+                                "type": "integer",
+                                "description": "Drawer number."
+                            },
+                            "size": {
+                                "type": "string",
+                                "enum": [
+                                    "S",
+                                    "M",
+                                    "L"
+                                ],
+                                "description": "Size of the drawer."
+                            },
+                            "enabled": {
+                                "type": "boolean",
+                                "description": "Whether the drawer is enabled for use."
+                            }
+                        }
+                    }
+                }
+            },
+            "required": [
+                "lower_level",
+                "upper_level"
+            ],
+            "additionalProperties": false
+        },
+        "drawer_capacities": {
+            "type": "array",
+            "description": "Drawer capacities by box type.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "box": {
+                        "type": "string"
+                    },
+                    "capacity": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "required": [
+                    "box",
+                    "capacity"
                 ],
                 "additionalProperties": false
             }
+        },
+        "box_constructions_per_replenishment": {
+            "type": "integer",
+            "description": "Duration of one replenishment measured as box constructions.",
+            "minimum": 1
+        },
+        "box_filling_durations": {
+            "type": "array",
+            "description": "Filling durations for each box type. The duration depends on the box type.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "box": {
+                        "type": "string"
+                    },
+                    "filling_duration": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                },
+                "required": [
+                    "box",
+                    "filling_duration"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "minimum_remaining_boxes": {
+            "type": "integer",
+            "description": "Minimum number of boxes to keep in drawers for each box type to ensure robustness.",
+            "minimum": 0
         },
         "orders": {
             "type": "object",
@@ -102,9 +221,13 @@
         }
     },
     "required": [
-        "start_time",
+        "operators",
+        "boxes",
         "drawers",
-        "replenish_windows",
+        "drawer_capacities",
+        "box_constructions_per_replenishment",
+        "box_filling_durations",
+        "minimum_remaining_boxes",
         "orders"
     ],
     "additionalProperties": false

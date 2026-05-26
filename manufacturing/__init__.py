@@ -1,5 +1,3 @@
-from .dataclasses.configuration import ManufacturingConfiguration
-from .dataclasses.problem_data import ManufacturingProblemData
 from .dataclasses.instance import ManufacturingInstance
 from .dataclasses.solution import ManufacturingSolution
 from .factory import ManufacturingSchedulingFactory

@@ -1,13 +1,19 @@
 from dataclasses import dataclass
 from dataclasses_json import dataclass_json
 from typing import List
-from .instance import OperatorOrderList
-from .problem_data import OrdersTable
+from .instance import ManufacturingInstance, Order
 
 
 @dataclass_json
 @dataclass
-class Drawer:
+class OperatorOrderList:
+    operator: int
+    orders: List[Order]
+
+
+@dataclass_json
+@dataclass
+class DrawerWithBox:
     drawer: int
     box: str
 
@@ -17,7 +23,7 @@ class Drawer:
 class Replenishment:
     drawer: int
     box: str
-    start: int
+    order_id: int
 
 
 @dataclass_json
@@ -30,11 +36,11 @@ class SolverInfo:
 
 @dataclass_json
 @dataclass
-class ManufacturingSolution:
+class ManufacturingSolution(ManufacturingInstance):
+    operator_order_lists: List[OperatorOrderList]
     is_solution_optimal: bool
-    drawer_box_mapping: List[Drawer]
+    index_of_fragmentation: float
+    drawer_box_mapping: List[DrawerWithBox]
     replenishments: List[Replenishment]
     box_constructions: List[int]
-    orders: OrdersTable
-    operator_order_lists: List[OperatorOrderList]
     solver: SolverInfo
