@@ -25,6 +25,7 @@ class ManufacturingSchedulingFactory:
             dc.box: dc.capacity for dc in self.instance.drawer_capacities
         }
         self.drawer_capacities = [drawer_capacities[box.box] for box in self.boxes]
+        self.min_num_drawers = self.calculate_min_num_drawers()
 
         (
             self.model,
@@ -94,6 +95,40 @@ class ManufacturingSchedulingFactory:
 
         return max_num_drawers
 
+    def calculate_min_num_drawers(self) -> List[int]:
+        """Lower bound on the number of drawers of each box.
+
+        With a single drawer, every order of the box must be served by it, so the
+        drawer cannot be replenished during a replenishment slot containing orders
+        of the box. Between two slots without orders of the box, the drawer starts
+        at most full and must never drop below the minimum remaining boxes: if the
+        orders in between exceed this margin, the box needs at least two drawers.
+        """
+        slot = self.instance.box_constructions_per_replenishment
+        min_remaining = max(self.instance.minimum_remaining_boxes, 0)
+
+        min_num_drawers = []
+        for box_idx, box in enumerate(self.boxes):
+            margin = self.drawer_capacities[box_idx] - min_remaining
+            needs_more = False
+            consumed = 0
+            for slot_start in range(0, len(self.orders), slot):
+                slot_orders = sum(
+                    1
+                    for order in self.orders[slot_start : slot_start + slot]
+                    if order.box == box.box
+                )
+                if slot_orders == 0:
+                    consumed = 0
+                    continue
+                consumed += slot_orders
+                if consumed > margin:
+                    needs_more = True
+                    break
+            min_num_drawers.append(2 if needs_more else 1)
+
+        return min_num_drawers
+
     def calculate_prev_order(self) -> List[Optional[int]]:
         prev_order = []
         last_order_with_box = {b.box: None for b in self.boxes}
@@ -133,6 +168,13 @@ class ManufacturingSchedulingFactory:
                     f"drawers_containing_box{box.box}",
                 )
             )
+            if self.min_num_drawers[box_idx] > 1:
+                if self.min_num_drawers[box_idx] > self.max_num_drawers[box_idx]:
+                    logging.warning(
+                        f"Box {box.box} requires at least {self.min_num_drawers[box_idx]} "
+                        f"drawers, but at most {self.max_num_drawers[box_idx]} can be assigned"
+                    )
+                model.add(drawers_per_box_vars[-1] >= self.min_num_drawers[box_idx])
 
         for size in SIZES:
             assigned_drawers = sum(
