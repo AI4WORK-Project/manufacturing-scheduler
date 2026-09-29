@@ -2,6 +2,7 @@ from manufacturing import (
     ManufacturingInstance,
     ManufacturingSolution,
     ManufacturingSchedulingFactory,
+    get_solution_with_granularity_fallback,
 )
 from manufacturing.dataclasses.instance import SIZES
 import pathlib
@@ -20,6 +21,13 @@ def test_instance0():
 def test_instance(instance: int):
     instance, solution = solve_instance(instance)
     validate_solution(solution)
+
+
+def test_granularity_fallback_not_solvable():
+    tests_path = pathlib.Path(__file__).parent.resolve()
+    with open(os.path.join(tests_path, "instances/instance_not_solvable.json")) as f:
+        instance = ManufacturingInstance.from_json(f.read())
+    assert get_solution_with_granularity_fallback(instance) is None
 
 
 def solve_instance(

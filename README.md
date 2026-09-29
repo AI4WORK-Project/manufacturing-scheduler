@@ -35,6 +35,8 @@ This endpoint accepts a JSON payload representing a scheduling problem and retur
 #### Query Parameters
 - `time_limit`: (Optional, int) The time limit in seconds for the solver. If not provided, the solver will run without a time constraint.
 
+Replenishments can start every `box_constructions_per_replenishment` orders. If no solution is found this way, the solver retries letting them start at a finer granularity (e.g. every 5, then 2, then 1 orders) and returns the first solution found. The time limit covers all the attempts.
+
 #### Request Body
 A JSON object describing the scheduling problem. 
 See [instance.json](examples/instances/instance.json) and [instance_annotated.json](examples/instances/instance_annotated.json) for an example.

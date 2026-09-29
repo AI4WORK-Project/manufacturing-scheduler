@@ -4,7 +4,7 @@ import pathlib
 from flask import Flask, Response, request, send_file
 from manufacturing import (
     ManufacturingInstance,
-    ManufacturingSchedulingFactory,
+    get_solution_with_granularity_fallback,
     plot_solution,
 )
 
@@ -26,12 +26,13 @@ def schedule():
         logging.info("Schedule request received!")
 
         instance: ManufacturingInstance = ManufacturingInstance.from_dict(request.json)
-        factory = ManufacturingSchedulingFactory(instance)
 
         time_limit = request.args.get("time_limit", None, type=int)
         logging.info(f"Time limit: {time_limit}")
 
-        solution = factory.get_solution(time_limit=time_limit)
+        solution = get_solution_with_granularity_fallback(
+            instance, time_limit=time_limit
+        )
         if solution is not None:
             logging.info(f"Solution found")
             plot_solution(solution, image_path=plot_img_path, html_path=plot_html_path)
