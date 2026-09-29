@@ -14,6 +14,9 @@ from manufacturing.dataclasses import solution
 
 STRATEGIES = ("full", "enumerate", "hint")
 
+# time limit in seconds of the relaxed model of relaxed_lower_bound
+RELAXED_BOUND_TIME_LIMIT = 2
+
 
 def get_solution_with_granularity_fallback(
     instance: ManufacturingInstance,
@@ -221,10 +224,199 @@ class ManufacturingSchedulingFactory:
                 return False
         return True
 
-    def _configuration_priority(self, config: Tuple[int, ...]) -> Tuple[float, ...]:
-        """The pressure per drawer of each box, from the highest down: a lower
-        priority comes first, as it better relieves the most pressured boxes."""
-        return tuple(
+    def calculate_single_drawer_replenishments(self, box_idx: int) -> Optional[int]:
+        """Minimum number of replenishments of the box if it has a single drawer,
+        or None if a single drawer is not enough.
+
+        The drawer starts full, can only be replenished during a window without
+        orders of the box (see calculate_drawer_pressure) and must never drop
+        below the minimum remaining boxes. Replenishing as late as possible, i.e.
+        only when the drawer would not last until the next window, gives the
+        minimum number of replenishments."""
+        box = self.boxes[box_idx].box
+        duration = self.instance.box_constructions_per_replenishment
+        capacity = self.drawer_capacities[box_idx]
+        min_remaining = max(self.instance.minimum_remaining_boxes, 0)
+        num_orders = len(self.orders)
+
+        # box_orders[j]: orders of the box before order j
+        box_orders = [0]
+        for order in self.orders:
+            box_orders.append(box_orders[-1] + (order.box == box))
+        free_window_starts = [
+            start
+            for start in range(0, num_orders, self.replenishment_granularity)
+            if box_orders[min(start + duration, num_orders)] == box_orders[start]
+        ]
+
+        remaining = capacity
+        replenishments = 0
+        consumed_until = 0
+        for i, start in enumerate(free_window_starts):
+            remaining -= box_orders[start] - box_orders[consumed_until]
+            consumed_until = start
+            if remaining < min_remaining:
+                return None
+            next_start = (
+                free_window_starts[i + 1]
+                if i + 1 < len(free_window_starts)
+                else num_orders
+            )
+            if remaining - (box_orders[next_start] - box_orders[start]) < min_remaining:
+                remaining = capacity
+                replenishments += 1
+        remaining -= box_orders[num_orders] - box_orders[consumed_until]
+        return replenishments if remaining >= min_remaining else None
+
+    def configuration_lower_bound(self, config: Tuple[int, ...]) -> Optional[int]:
+        """Lower bound on the objective (the number of groups of consecutive
+        replenishments) with the given number of drawers per box, or None if the
+        configuration has no solution.
+
+        Each drawer is replenished at most once in a group, so a box with k
+        drawers needs at least replenishments / k groups, and all the boxes
+        together need at least total replenishments / #drawers groups. With a
+        single drawer the minimum number of replenishments is exact (see
+        calculate_single_drawer_replenishments); with more drawers it only
+        counts the orders: the drawers start full and each replenishment adds at
+        most a full drawer."""
+        if not hasattr(self, "_single_drawer_replenishments"):
+            self._single_drawer_replenishments = [
+                self.calculate_single_drawer_replenishments(box_idx)
+                for box_idx in range(len(self.boxes))
+            ]
+        min_remaining = max(self.instance.minimum_remaining_boxes, 0)
+        box_orders = {box.box: 0 for box in self.boxes}
+        for order in self.orders:
+            box_orders[order.box] += 1
+
+        lower_bound = 0
+        total_replenishments = 0
+        for box_idx, num_drawers in enumerate(config):
+            if num_drawers == 1:
+                replenishments = self._single_drawer_replenishments[box_idx]
+                if replenishments is None:
+                    return None
+            else:
+                capacity = self.drawer_capacities[box_idx]
+                replenishments = max(
+                    0,
+                    -(
+                        -(
+                            box_orders[self.boxes[box_idx].box]
+                            + min_remaining
+                            - num_drawers * capacity
+                        )
+                        // capacity
+                    ),
+                )
+            total_replenishments += replenishments
+            lower_bound = max(lower_bound, -(-replenishments // num_drawers))
+        return max(lower_bound, -(-total_replenishments // sum(config)))
+
+    def relaxed_lower_bound(
+        self, config: Tuple[int, ...], time_limit: float
+    ) -> Tuple[int, bool]:
+        """Lower bound on the objective with the given number of drawers per box,
+        from a relaxed model with only the replenishments: at most one at a time,
+        each drawer at most once in a group, and the drawers of the boxes with a
+        single drawer replenished often enough, only in the windows without
+        orders of the box. The replenishments of the boxes with more drawers are
+        free: they can only join groups. Returns the bound and whether the
+        relaxed model has been solved to optimality; the bound is valid anyway."""
+        duration = self.instance.box_constructions_per_replenishment
+        granularity = self.replenishment_granularity
+        min_remaining = max(self.instance.minimum_remaining_boxes, 0)
+        slots = list(range(0, len(self.orders), granularity))
+        slots_per_replenishment = duration // granularity
+
+        model = cp_model.CpModel()
+        start_vars = []  # (box_idx, {slot_idx: var}) for each drawer
+        for box_idx, num_drawers in enumerate(config):
+            box = self.boxes[box_idx].box
+            for _ in range(num_drawers):
+                starts = {}
+                for slot_idx, start in enumerate(slots):
+                    window = self.orders[start : start + duration]
+                    if num_drawers == 1 and any(order.box == box for order in window):
+                        continue
+                    starts[slot_idx] = model.new_bool_var("")
+                start_vars.append((box_idx, starts))
+
+        in_progress = [[] for _ in slots]
+        for _, starts in start_vars:
+            for slot_idx, var in starts.items():
+                for i in range(
+                    slot_idx, min(slot_idx + slots_per_replenishment, len(slots))
+                ):
+                    in_progress[i].append(var)
+        any_replenish_vars = []
+        for slot_vars in in_progress:
+            any_replenish = model.new_bool_var("")
+            model.add(sum(slot_vars) == any_replenish)
+            any_replenish_vars.append(any_replenish)
+
+        # each drawer is replenished at most once in each group
+        for _, starts in start_vars:
+            prev_cumulative = None
+            for slot_idx in range(len(slots)):
+                cumulative = model.new_bool_var("")
+                start_var = starts.get(slot_idx)
+                if start_var is not None:
+                    model.add_implication(start_var, cumulative)
+                    if prev_cumulative is not None:
+                        model.add_implication(start_var, prev_cumulative.negated())
+                if prev_cumulative is not None:
+                    model.add_bool_or(
+                        cumulative,
+                        prev_cumulative.negated(),
+                        any_replenish_vars[slot_idx].negated(),
+                    )
+                prev_cumulative = cumulative
+
+        # a single drawer cannot serve more than capacity - minimum_remaining_boxes
+        # orders of the box without a replenishment in between
+        for box_idx, starts in start_vars:
+            if config[box_idx] > 1:
+                continue
+            box = self.boxes[box_idx].box
+            positions = [i for i, order in enumerate(self.orders) if order.box == box]
+            width = self.drawer_capacities[box_idx] - min_remaining + 1
+            for i in range(len(positions) - width + 1):
+                first, last = positions[i], positions[i + width - 1]
+                model.add_bool_or(
+                    var
+                    for slot_idx, var in starts.items()
+                    if first < slots[slot_idx] <= last
+                )
+
+        group_start_vars = []
+        for slot_idx, any_replenish in enumerate(any_replenish_vars):
+            group_start = model.new_bool_var("")
+            if slot_idx == 0:
+                model.add_implication(any_replenish, group_start)
+            else:
+                model.add_bool_or(
+                    group_start,
+                    any_replenish.negated(),
+                    any_replenish_vars[slot_idx - 1],
+                )
+            group_start_vars.append(group_start)
+        model.minimize(sum(group_start_vars))
+
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = time_limit
+        status = solver.solve(model)
+        if status == cp_model.INFEASIBLE:
+            return math.inf, True
+        return math.ceil(solver.best_objective_bound - 1e-6), status == cp_model.OPTIMAL
+
+    def _configuration_priority(self, config: Tuple[int, ...]) -> Tuple:
+        """A lower priority comes first: first the lower bound on the objective,
+        then the pressure per drawer of each box, from the highest down, as the
+        configurations that better relieve the most pressured boxes come first."""
+        lower_bound = self.configuration_lower_bound(config)
+        pressures = tuple(
             sorted(
                 (
                     self.drawer_pressure[box_idx] / num_drawers
@@ -233,6 +425,7 @@ class ManufacturingSchedulingFactory:
                 reverse=True,
             )
         )
+        return (math.inf if lower_bound is None else lower_bound, pressures)
 
     def iter_drawer_configurations(self) -> Iterator[Tuple[int, ...]]:
         """Generates, one at a time, the numbers of drawers per box that use all
@@ -871,14 +1064,50 @@ class ManufacturingSchedulingFactory:
         by iter_drawer_configurations, in its order, and returns the best
         solution. The time limit is global: each restricted model can use all the
         remaining time. Each restricted model only looks for solutions better than
-        the best one so far. The solution is optimal among the generated
-        configurations if all of them have been solved to optimality or proven
-        infeasible."""
+        the best one so far: the configurations whose configuration_lower_bound
+        is not better than the best solution are skipped. The solution is optimal among the generated configurations if
+        all of them have been solved to optimality, proven infeasible or skipped."""
         start_time = time.time()
         best = None
         all_closed = True
+        use_relaxed_bound = True
         user_time = 0.0
         for config in self.iter_drawer_configurations():
+            # only look for solutions strictly better than the best one so far:
+            # a configuration that cannot improve is proven infeasible
+            objective_ub = None
+            if best is not None:
+                objective_ub = round(best[0].objective_value) - 1
+            objective_lb = self.configuration_lower_bound(config)
+            if objective_lb is None or (
+                objective_ub is not None and objective_lb > objective_ub
+            ):
+                logging.info(
+                    f"configuration {config}: skipped, lower bound {objective_lb}"
+                )
+                continue
+            # the relaxed lower bound is only computed to skip a configuration
+            # that cannot improve the best solution, and it is no longer tried
+            # once it does not close within its time limit
+            if objective_ub is not None and use_relaxed_bound:
+                relaxed_time_limit = RELAXED_BOUND_TIME_LIMIT
+                if time_limit is not None:
+                    relaxed_time_limit = min(
+                        relaxed_time_limit,
+                        time_limit - (time.time() - start_time),
+                    )
+                if relaxed_time_limit > 0:
+                    relaxed_lb, closed = self.relaxed_lower_bound(
+                        config, relaxed_time_limit
+                    )
+                    use_relaxed_bound = closed
+                    if relaxed_lb > objective_ub:
+                        logging.info(
+                            f"configuration {config}: skipped, relaxed lower bound "
+                            f"{relaxed_lb}"
+                        )
+                        continue
+
             config_time_limit = None
             if time_limit is not None:
                 remaining = time_limit - (time.time() - start_time)
@@ -887,12 +1116,9 @@ class ManufacturingSchedulingFactory:
                     break
                 config_time_limit = remaining
 
-            # only look for solutions strictly better than the best one so far:
-            # a configuration that cannot improve is proven infeasible
-            objective_ub = None
-            if best is not None:
-                objective_ub = round(best[0].objective_value) - 1
             solver = self._new_solver(config_time_limit)
+            # the lower bound is not added to the model: on these instances it
+            # slows down CP-SAT
             status = solver.solve(self.restricted_model(config, objective_ub))
             user_time += solver.user_time
             logging.info(
