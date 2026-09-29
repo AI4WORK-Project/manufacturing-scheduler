@@ -21,7 +21,7 @@ RELAXED_BOUND_TIME_LIMIT = 2
 def get_solution_with_granularity_fallback(
     instance: ManufacturingInstance,
     time_limit: Optional[float] = None,
-    strategy: str = "full",
+    strategy: str = "enumerate",
 ) -> Optional[ManufacturingSolution]:
     """Solves the instance with the coarsest replenishment granularity that has
     a solution: it tries box_constructions_per_replenishment first, then its

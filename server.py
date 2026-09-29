@@ -31,7 +31,7 @@ def schedule():
         time_limit = request.args.get("time_limit", None, type=int)
         logging.info(f"Time limit: {time_limit}")
 
-        strategy = request.args.get("strategy", "full", type=str)
+        strategy = request.args.get("strategy", "enumerate", type=str)
         logging.info(f"Strategy: {strategy}")
         if strategy not in STRATEGIES:
             return Response(
