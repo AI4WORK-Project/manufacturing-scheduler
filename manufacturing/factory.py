@@ -2,8 +2,9 @@ from manufacturing import ManufacturingInstance, ManufacturingSolution
 from manufacturing.dataclasses.instance import Order, SIZES
 from manufacturing.dataclasses.solution import OperatorOrderList
 
-from typing import Tuple, List, Optional, Dict
+from typing import Tuple, List, Optional, Dict, Iterator
 from ortools.sat.python import cp_model
+import heapq
 import math
 import logging
 import time
@@ -11,9 +12,13 @@ import time
 from manufacturing.dataclasses import solution
 
 
+STRATEGIES = ("full", "enumerate", "hint")
+
+
 def get_solution_with_granularity_fallback(
     instance: ManufacturingInstance,
     time_limit: Optional[float] = None,
+    strategy: str = "full",
 ) -> Optional[ManufacturingSolution]:
     """Solves the instance with the coarsest replenishment granularity that has
     a solution: it tries box_constructions_per_replenishment first, then its
@@ -32,7 +37,7 @@ def get_solution_with_granularity_fallback(
         factory = ManufacturingSchedulingFactory(
             instance, replenishment_granularity=granularity
         )
-        solution = factory.get_solution(remaining)
+        solution = factory.get_solution_by_strategy(strategy, remaining)
         if solution is not None:
             logging.info(
                 f"solution found with replenishment granularity {granularity}"
@@ -149,22 +154,23 @@ class ManufacturingSchedulingFactory:
 
         return max_num_drawers
 
-    def calculate_min_num_drawers(self) -> List[int]:
-        """Lower bound on the number of drawers of each box.
+    def calculate_drawer_pressure(self) -> List[float]:
+        """Pressure on a single drawer of each box.
 
         With a single drawer, every order of the box must be served by it, so the
         drawer can only be replenished during a window of
         box_constructions_per_replenishment orders, starting at a multiple of the
         replenishment granularity, that contains no order of the box. Between the
         ends of two such windows, the drawer starts at most full and must never
-        drop below the minimum remaining boxes: if the orders in between exceed
-        this margin, the box needs at least two drawers.
+        drop below the minimum remaining boxes. The pressure is the largest number
+        of orders between two such window ends, divided by this margin: above 1,
+        a single drawer is not enough.
         """
         duration = self.instance.box_constructions_per_replenishment
         granularity = self.replenishment_granularity
         min_remaining = max(self.instance.minimum_remaining_boxes, 0)
 
-        min_num_drawers = []
+        pressure = []
         for box_idx, box in enumerate(self.boxes):
             margin = self.drawer_capacities[box_idx] - min_remaining
             free_window_ends = {
@@ -175,19 +181,158 @@ class ManufacturingSchedulingFactory:
                     for order in self.orders[start : start + duration]
                 )
             }
-            needs_more = False
+            max_consumed = 0
             consumed = 0
             for order_idx, order in enumerate(self.orders):
                 if order_idx in free_window_ends:
                     consumed = 0
                 if order.box == box.box:
                     consumed += 1
-                    if consumed > margin:
-                        needs_more = True
-                        break
-            min_num_drawers.append(2 if needs_more else 1)
+                    max_consumed = max(max_consumed, consumed)
+            if margin > 0:
+                pressure.append(max_consumed / margin)
+            else:
+                pressure.append(math.inf if max_consumed > 0 else 0.0)
 
-        return min_num_drawers
+        return pressure
+
+    def calculate_min_num_drawers(self) -> List[int]:
+        """Lower bound on the number of drawers of each box: a box needs at least
+        two drawers if the pressure on a single drawer exceeds 1."""
+        self.drawer_pressure = self.calculate_drawer_pressure()
+        return [2 if p > 1 else 1 for p in self.drawer_pressure]
+
+    def _is_valid_configuration(self, config: Tuple[int, ...]) -> bool:
+        """Whether the number of drawers per box satisfies the size constraints
+        of define_drawers_per_box_vars."""
+        for size in SIZES:
+            assigned_drawers = sum(
+                config[box_idx]
+                for box_idx, box in enumerate(self.boxes)
+                if SIZES[box.size] <= SIZES[size]
+            )
+            minimum_required_drawers = len(
+                [d for d in self.drawers if SIZES[d.size] <= SIZES[size]]
+            )
+            if size == "L":
+                if assigned_drawers != minimum_required_drawers:
+                    return False
+            elif assigned_drawers < minimum_required_drawers:
+                return False
+        return True
+
+    def _configuration_priority(self, config: Tuple[int, ...]) -> Tuple[float, ...]:
+        """The pressure per drawer of each box, from the highest down: a lower
+        priority comes first, as it better relieves the most pressured boxes."""
+        return tuple(
+            sorted(
+                (
+                    self.drawer_pressure[box_idx] / num_drawers
+                    for box_idx, num_drawers in enumerate(config)
+                ),
+                reverse=True,
+            )
+        )
+
+    def iter_drawer_configurations(self) -> Iterator[Tuple[int, ...]]:
+        """Generates, one at a time, the numbers of drawers per box that use all
+        the drawers and satisfy the bounds and the size constraints, in order of
+        priority (see _configuration_priority).
+
+        Each box gets at most max(2, ceil(#drawers / #boxes)) drawers, unless its
+        lower bound requires more: two drawers are enough to replenish one while
+        the other serves the orders. If no configuration satisfies this cap, the
+        cap is raised.
+
+        The first configuration is built greedily, giving each extra drawer to
+        the box with the highest pressure per drawer. The next ones are explored
+        best-first, moving one drawer from a box to another, so the order is only
+        approximately the order of priority."""
+        num_drawers = len(self.drawers)
+        num_boxes = len(self.boxes)
+        if sum(self.min_num_drawers) > num_drawers or any(
+            lb > ub for lb, ub in zip(self.min_num_drawers, self.max_num_drawers)
+        ):
+            return
+
+        cap = max(2, -(-num_drawers // num_boxes))
+        while True:
+            upper = [
+                min(ub, max(lb, cap))
+                for lb, ub in zip(self.min_num_drawers, self.max_num_drawers)
+            ]
+            if sum(upper) >= num_drawers:
+                config = list(self.min_num_drawers)
+                for _ in range(num_drawers - sum(config)):
+                    box_idx = max(
+                        (b for b in range(num_boxes) if config[b] < upper[b]),
+                        key=lambda b: self.drawer_pressure[b] / config[b],
+                    )
+                    config[box_idx] += 1
+                config = tuple(config)
+
+                found = False
+                queue = [(self._configuration_priority(config), config)]
+                visited = {config}
+                while queue:
+                    _, config = heapq.heappop(queue)
+                    if self._is_valid_configuration(config):
+                        found = True
+                        yield config
+                    for i in range(num_boxes):
+                        if config[i] <= self.min_num_drawers[i]:
+                            continue
+                        for j in range(num_boxes):
+                            if j == i or config[j] >= upper[j]:
+                                continue
+                            neighbour = list(config)
+                            neighbour[i] -= 1
+                            neighbour[j] += 1
+                            neighbour = tuple(neighbour)
+                            if neighbour not in visited:
+                                visited.add(neighbour)
+                                heapq.heappush(
+                                    queue,
+                                    (self._configuration_priority(neighbour), neighbour),
+                                )
+                if found:
+                    return
+
+            if cap >= max(self.max_num_drawers):
+                return
+            logging.info(
+                f"no drawer configuration with at most {cap} drawers per box, "
+                f"raising the cap to {cap + 1}"
+            )
+            cap += 1
+
+    def restricted_model(
+        self,
+        config: Optional[Tuple[int, ...]],
+        objective_ub: Optional[int] = None,
+    ) -> cp_model.CpModel:
+        """A copy of the model with, if config is given, the number of drawers of
+        each box fixed and, if objective_ub is given, the objective at most
+        objective_ub. The copy has the same variable indexes of the original
+        model."""
+        model = self.model.clone()
+        for box_idx, num_drawers in enumerate(config or ()):
+            var = model.get_int_var_from_proto_index(
+                self.drawers_per_box_vars[box_idx].index
+            )
+            model.add(var == num_drawers)
+        if objective_ub is not None:
+            objective = model.proto.objective
+            assert objective.scaling_factor in (0, 1)
+            model.add(
+                sum(
+                    coeff * model.get_int_var_from_proto_index(var_idx)
+                    for var_idx, coeff in zip(objective.vars, objective.coeffs)
+                )
+                + int(objective.offset)
+                <= objective_ub
+            )
+        return model
 
     def calculate_prev_order(self) -> List[Optional[int]]:
         prev_order = []
@@ -665,9 +810,7 @@ class ManufacturingSchedulingFactory:
         #     )
         # )
 
-    def get_solution(
-        self, time_limit: Optional[int] = None
-    ) -> Optional[ManufacturingSolution]:
+    def _new_solver(self, time_limit: Optional[float] = None) -> cp_model.CpSolver:
         solver = cp_model.CpSolver()
         if time_limit is not None:
             solver.parameters.max_time_in_seconds = time_limit
@@ -700,7 +843,143 @@ class ManufacturingSchedulingFactory:
         # solution_callback = SolutionCallback()
         # status = solver.solve(self.model, solution_callback=solution_callback)
 
+        return solver
+
+    def get_solution_by_strategy(
+        self, strategy: str, time_limit: Optional[float] = None
+    ) -> Optional[ManufacturingSolution]:
+        """Solves the model with one of STRATEGIES."""
+        if strategy == "full":
+            return self.get_solution(time_limit)
+        if strategy == "enumerate":
+            return self.get_solution_by_enumeration(time_limit)
+        if strategy == "hint":
+            return self.get_solution_with_hint(time_limit)
+        raise ValueError(f"Unknown strategy {strategy}")
+
+    def get_solution(
+        self, time_limit: Optional[int] = None
+    ) -> Optional[ManufacturingSolution]:
+        solver = self._new_solver(time_limit)
         status = solver.solve(self.model)
+        return self._extract_solution(solver, status)
+
+    def get_solution_by_enumeration(
+        self, time_limit: Optional[float] = None
+    ) -> Optional[ManufacturingSolution]:
+        """Solves a restricted model for each number of drawers per box generated
+        by iter_drawer_configurations, in its order, and returns the best
+        solution. The time limit is global: each restricted model can use all the
+        remaining time. Each restricted model only looks for solutions better than
+        the best one so far. The solution is optimal among the generated
+        configurations if all of them have been solved to optimality or proven
+        infeasible."""
+        start_time = time.time()
+        best = None
+        all_closed = True
+        user_time = 0.0
+        for config in self.iter_drawer_configurations():
+            config_time_limit = None
+            if time_limit is not None:
+                remaining = time_limit - (time.time() - start_time)
+                if remaining <= 0:
+                    all_closed = False
+                    break
+                config_time_limit = remaining
+
+            # only look for solutions strictly better than the best one so far:
+            # a configuration that cannot improve is proven infeasible
+            objective_ub = None
+            if best is not None:
+                objective_ub = round(best[0].objective_value) - 1
+            solver = self._new_solver(config_time_limit)
+            status = solver.solve(self.restricted_model(config, objective_ub))
+            user_time += solver.user_time
+            logging.info(
+                f"configuration {config}: {solver.status_name(status)}, "
+                f"objective {solver.objective_value if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else None}, "
+                f"{solver.wall_time:.1f}s"
+            )
+            if status not in (cp_model.OPTIMAL, cp_model.INFEASIBLE):
+                all_closed = False
+            if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) and (
+                best is None or solver.objective_value < best[0].objective_value
+            ):
+                best = (solver, status)
+
+        if best is None:
+            print("No solution found.")
+            return None
+        solver, status = best
+        return self._extract_solution(
+            solver, status, is_optimal=all_closed, user_time=user_time
+        )
+
+    def get_solution_with_hint(
+        self, time_limit: Optional[float] = None
+    ) -> Optional[ManufacturingSolution]:
+        """Solves the restricted model of the first drawer configuration,
+        then solves the full model using that solution as a hint and looking only
+        for solutions at least as good. The solution of the restricted model is
+        also a solution of the full model, so the hint is a valid solution, and it
+        is returned if the full model finds nothing. The time limit is global:
+        the full model gets the time left by the restricted one."""
+        config = next(self.iter_drawer_configurations(), None)
+        if config is None:
+            print("No solution found.")
+            return None
+
+        start_time = time.time()
+        hint_solver = self._new_solver(time_limit)
+        hint_status = hint_solver.solve(self.restricted_model(config))
+        logging.info(
+            f"hint configuration {config}: "
+            f"{hint_solver.status_name(hint_status)}, {hint_solver.wall_time:.1f}s"
+        )
+        has_hint = hint_status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+        user_time = hint_solver.user_time
+
+        remaining = None
+        if time_limit is not None:
+            remaining = time_limit - (time.time() - start_time)
+        if remaining is None or remaining > 0:
+            if has_hint:
+                model = self.restricted_model(
+                    None, round(hint_solver.objective_value)
+                )
+                for var_idx, value in enumerate(hint_solver.response_proto.solution):
+                    model.add_hint(model.get_int_var_from_proto_index(var_idx), value)
+            else:
+                model = self.model
+
+            solver = self._new_solver(remaining)
+            status = solver.solve(model)
+            user_time += solver.user_time
+            logging.info(
+                f"full model with hint: {solver.status_name(status)}, "
+                f"{solver.wall_time:.1f}s"
+            )
+            if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                return self._extract_solution(solver, status, user_time=user_time)
+
+        if has_hint:
+            return self._extract_solution(
+                hint_solver, hint_status, is_optimal=False, user_time=user_time
+            )
+        print("No solution found.")
+        return None
+
+    def _extract_solution(
+        self,
+        solver: cp_model.CpSolver,
+        status,
+        is_optimal: Optional[bool] = None,
+        user_time: Optional[float] = None,
+    ) -> Optional[ManufacturingSolution]:
+        if is_optimal is None:
+            is_optimal = status == cp_model.OPTIMAL
+        if user_time is None:
+            user_time = solver.user_time
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
             print(
                 f"{'Optimal' if status == cp_model.OPTIMAL else 'Feasible'} solution found."
@@ -772,7 +1051,7 @@ class ManufacturingSchedulingFactory:
             )
 
             solver_info = solution.SolverInfo(
-                solver.objective_value, solver.best_objective_bound, solver.user_time
+                solver.objective_value, solver.best_objective_bound, user_time
             )
 
             return ManufacturingSolution(
@@ -785,7 +1064,7 @@ class ManufacturingSchedulingFactory:
                 self.instance.minimum_remaining_boxes,
                 self.instance.orders,
                 self.operator_order_lists,
-                status == cp_model.OPTIMAL,
+                is_optimal,
                 index_of_fragmentation,
                 drawer_box_mapping,
                 replenishments,

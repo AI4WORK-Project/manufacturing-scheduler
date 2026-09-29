@@ -4,6 +4,7 @@ import pathlib
 from flask import Flask, Response, request, send_file
 from manufacturing import (
     ManufacturingInstance,
+    STRATEGIES,
     get_solution_with_granularity_fallback,
     plot_solution,
 )
@@ -30,8 +31,16 @@ def schedule():
         time_limit = request.args.get("time_limit", None, type=int)
         logging.info(f"Time limit: {time_limit}")
 
+        strategy = request.args.get("strategy", "full", type=str)
+        logging.info(f"Strategy: {strategy}")
+        if strategy not in STRATEGIES:
+            return Response(
+                '{"message":"Unknown strategy %s"}' % strategy,
+                mimetype="application/json",
+                status=400,
+            )
         solution = get_solution_with_granularity_fallback(
-            instance, time_limit=time_limit
+            instance, time_limit=time_limit, strategy=strategy
         )
         if solution is not None:
             logging.info(f"Solution found")
