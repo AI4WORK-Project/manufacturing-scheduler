@@ -18,7 +18,6 @@ class ManufacturingSchedulingFactory:
         self.boxes = self.get_boxes()
         self.box_index = {box.box: i for i, box in enumerate(self.boxes)}
         self.drawers = self.get_drawers()
-        self.max_num_drawers = self.calculate_max_num_drawers()
         self.prev_order = self.calculate_prev_order()
 
         drawer_capacities = {
@@ -26,6 +25,7 @@ class ManufacturingSchedulingFactory:
         }
         self.drawer_capacities = [drawer_capacities[box.box] for box in self.boxes]
         self.min_num_drawers = self.calculate_min_num_drawers()
+        self.max_num_drawers = self.calculate_max_num_drawers()
 
         (
             self.model,
@@ -75,12 +75,14 @@ class ManufacturingSchedulingFactory:
         return orders, operator_order_lists
 
     def calculate_max_num_drawers(self) -> List[int]:
-        num_boxes_ge_size = {s: 0 for s in SIZES}
-        for b in self.boxes:
-            for s in SIZES:
-                if SIZES[b.size] >= SIZES[s]:
-                    num_boxes_ge_size[s] += 1
+        """Upper bound on the number of drawers of each box.
 
+        For each size s up to the size of the box, the box and every other box of
+        size at least s can only use drawers of size at least s, and every other box
+        needs at least its minimum number of drawers. Sizes smaller than the box
+        account for the drawers that smaller boxes take from larger sizes when the
+        smaller drawers are not enough.
+        """
         num_drawers_ge_size = {s: 0 for s in SIZES}
         for d in self.drawers:
             for s in SIZES:
@@ -88,46 +90,87 @@ class ManufacturingSchedulingFactory:
                     num_drawers_ge_size[s] += 1
 
         max_num_drawers = []
-        for b in self.boxes:
-            max_num_drawers.append(
-                num_drawers_ge_size[b.size] - num_boxes_ge_size[b.size] + 1
+        for box_idx, b in enumerate(self.boxes):
+            available_drawers = min(
+                num_drawers_ge_size[s]
+                - sum(
+                    self.min_num_drawers[other_idx]
+                    for other_idx, other in enumerate(self.boxes)
+                    if other_idx != box_idx and SIZES[other.size] >= SIZES[s]
+                )
+                for s in SIZES
+                if SIZES[s] <= SIZES[b.size]
             )
+            max_num_drawers.append(max(1, available_drawers))
 
         return max_num_drawers
 
     def calculate_min_num_drawers(self) -> List[int]:
         """Lower bound on the number of drawers of each box.
 
-        With a single drawer, every order of the box must be served by it, so the
-        drawer cannot be replenished during a replenishment slot containing orders
-        of the box. Between two slots without orders of the box, the drawer starts
-        at most full and must never drop below the minimum remaining boxes: if the
-        orders in between exceed this margin, the box needs at least two drawers.
+        The smallest number of drawers passing `can_serve_box_orders`, a relaxation
+        of the problem restricted to a single box. If no number of drawers passes,
+        the bound exceeds the number of drawers.
         """
         slot = self.instance.box_constructions_per_replenishment
         min_remaining = max(self.instance.minimum_remaining_boxes, 0)
+        num_slots = math.ceil(len(self.orders) / slot)
+        slot_demands = [[0] * num_slots for _ in self.boxes]
+        for order_idx, order in enumerate(self.orders):
+            slot_demands[self.box_index[order.box]][order_idx // slot] += 1
 
         min_num_drawers = []
-        for box_idx, box in enumerate(self.boxes):
-            margin = self.drawer_capacities[box_idx] - min_remaining
-            needs_more = False
-            consumed = 0
-            for slot_start in range(0, len(self.orders), slot):
-                slot_orders = sum(
-                    1
-                    for order in self.orders[slot_start : slot_start + slot]
-                    if order.box == box.box
-                )
-                if slot_orders == 0:
-                    consumed = 0
-                    continue
-                consumed += slot_orders
-                if consumed > margin:
-                    needs_more = True
-                    break
-            min_num_drawers.append(2 if needs_more else 1)
+        for box_idx, demands in enumerate(slot_demands):
+            num_drawers = 1
+            while num_drawers <= len(self.drawers) and not self.can_serve_box_orders(
+                demands, num_drawers, self.drawer_capacities[box_idx], min_remaining
+            ):
+                num_drawers += 1
+            min_num_drawers.append(num_drawers)
 
         return min_num_drawers
+
+    @staticmethod
+    def can_serve_box_orders(
+        demands: List[int], num_drawers: int, capacity: int, min_remaining: int
+    ) -> bool:
+        """Necessary condition for serving the orders of a box with `num_drawers` drawers.
+
+        `demands` holds the number of orders of the box in each replenishment slot.
+        The drawers are relaxed to a single pool of boxes, starting full, and the
+        highest reachable stock is tracked slot by slot. In each slot either:
+        - no drawer is replenished: the orders are served by the stock, which must
+          not drop below `min_remaining`;
+        - one drawer is replenished: it is not full, so the stock is not full, and
+          cannot serve orders during the slot, so the orders are served by the other
+          drawers, holding at most `(num_drawers - 1) * capacity` boxes. The
+          replenished drawer counts as full for the minimum remaining boxes.
+        Both transitions are monotone in the stock, so keeping the highest stock is
+        exact for the relaxation. With a single drawer, the replenishment can only
+        happen in slots without orders of the box.
+        """
+        full_stock = num_drawers * capacity
+        stock = full_stock
+        for demand in demands:
+            next_stock = None
+            if stock >= demand and (demand == 0 or stock - demand >= min_remaining):
+                next_stock = stock - demand
+
+            usable = min(stock, (num_drawers - 1) * capacity)
+            if (
+                stock < full_stock
+                and usable >= demand
+                and (demand == 0 or usable - demand + capacity >= min_remaining)
+            ):
+                replenished_stock = usable - demand + capacity
+                if next_stock is None or replenished_stock > next_stock:
+                    next_stock = replenished_stock
+
+            if next_stock is None:
+                return False
+            stock = next_stock
+
+        return True
 
     def calculate_prev_order(self) -> List[Optional[int]]:
         prev_order = []
@@ -161,20 +204,22 @@ class ManufacturingSchedulingFactory:
     ) -> List[cp_model.IntVar]:
         drawers_per_box_vars = []
         for box_idx, box in enumerate(self.boxes):
+            min_num_drawers = self.min_num_drawers[box_idx]
+            max_num_drawers = self.max_num_drawers[box_idx]
             drawers_per_box_vars.append(
                 model.new_int_var(
-                    1,
-                    self.max_num_drawers[box_idx],
+                    min(min_num_drawers, max_num_drawers),
+                    max_num_drawers,
                     f"drawers_containing_box{box.box}",
                 )
             )
-            if self.min_num_drawers[box_idx] > 1:
-                if self.min_num_drawers[box_idx] > self.max_num_drawers[box_idx]:
-                    logging.warning(
-                        f"Box {box.box} requires at least {self.min_num_drawers[box_idx]} "
-                        f"drawers, but at most {self.max_num_drawers[box_idx]} can be assigned"
-                    )
-                model.add(drawers_per_box_vars[-1] >= self.min_num_drawers[box_idx])
+            if min_num_drawers > max_num_drawers:
+                logging.warning(
+                    f"Box {box.box} requires at least {min_num_drawers} "
+                    f"drawers, but at most {max_num_drawers} can be assigned"
+                )
+                # an empty domain would make the model invalid instead of infeasible
+                model.add(drawers_per_box_vars[-1] >= min_num_drawers)
 
         for size in SIZES:
             assigned_drawers = sum(
@@ -211,7 +256,7 @@ class ManufacturingSchedulingFactory:
                         )
                         replenish_vars[box_idx][drawer_idx].append(rep_var)
 
-                        if drawer_idx > 0:
+                        if drawer_idx >= self.min_num_drawers[box_idx]:
                             # Replenishing the d-th drawer implies that the box has at least d drawers assigned
                             model.add(
                                 drawers_per_box_vars[box_idx] >= drawer_idx + 1
