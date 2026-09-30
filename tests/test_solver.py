@@ -2,6 +2,7 @@ from manufacturing import (
     ManufacturingInstance,
     ManufacturingSolution,
     ManufacturingSchedulingFactory,
+    get_solution_with_granularity_fallback,
 )
 from manufacturing.dataclasses.instance import SIZES
 import pathlib
@@ -22,16 +23,52 @@ def test_instance(instance: int):
     validate_solution(solution)
 
 
+def test_instance_with_hint():
+    instance, solution = solve_instance(1, strategy="hint")
+    validate_solution(solution)
+
+
+@pytest.mark.parametrize("disabled_drawers", [None, {3, 4, 7, 11}])
+@pytest.mark.parametrize("instance", [0, 1])
+def test_enumeration_matches_full_model(instance: int, disabled_drawers):
+    _, full = solve_instance(instance, disabled_drawers=disabled_drawers)
+    _, enumerated = solve_instance(
+        instance, strategy="enumerate", disabled_drawers=disabled_drawers
+    )
+    validate_solution(enumerated)
+    assert full.is_solution_optimal and enumerated.is_solution_optimal
+    assert full.solver.objective_value == enumerated.solver.objective_value
+
+
+def test_granularity_fallback_not_solvable():
+    tests_path = pathlib.Path(__file__).parent.resolve()
+    with open(os.path.join(tests_path, "instances/instance_not_solvable.json")) as f:
+        instance = ManufacturingInstance.from_json(f.read())
+    assert get_solution_with_granularity_fallback(instance, strategy="enumerate") is None
+
+
 def solve_instance(
-    instance: int, time_limit: Optional[int] = None
+    instance: int,
+    time_limit: Optional[int] = None,
+    strategy: str = "full",
+    disabled_drawers: Optional[set] = None,
 ) -> Tuple[ManufacturingInstance, ManufacturingSolution]:
     tests_path = pathlib.Path(__file__).parent.resolve()
     problem_data = os.path.join(tests_path, f"instances/instance{instance}.json")
     with open(problem_data) as f:
         instance: ManufacturingInstance = ManufacturingInstance.from_json(f.read())
 
+    for drawer in instance.drawers.lower_level + instance.drawers.upper_level:
+        if disabled_drawers and drawer.drawer in disabled_drawers:
+            drawer.enabled = False
+
     factory = ManufacturingSchedulingFactory(instance)
-    solution: ManufacturingSolution = factory.get_solution(time_limit)
+    if strategy == "full":
+        solution = factory.get_solution(time_limit)
+    elif strategy == "enumerate":
+        solution = factory.get_solution_by_enumeration(time_limit)
+    else:
+        solution = factory.get_solution_with_hint(time_limit)
     assert solution is not None
     return instance, solution
 
