@@ -263,9 +263,9 @@ class ManufacturingSchedulingFactory:
           not drop below `min_remaining`;
         - one drawer is replenished: it is not full when it starts, so the stock is
           not full, and it cannot serve orders, so the orders are served by the
-          other drawers, holding at most `(num_drawers - 1) * capacity` boxes. The
-          replenished drawer counts as full for the minimum remaining boxes, and it
-          adds a full drawer to the stock when the replenishment ends.
+          other drawers, holding at most `(num_drawers - 1) * capacity` boxes,
+          which must not drop below `min_remaining`. The replenished drawer adds a
+          full drawer to the stock when the replenishment ends.
         All the transitions are monotone in the stock, so keeping the highest stock
         is exact for the relaxation. With a single drawer, the replenishment can
         only happen in windows without orders of the box.
@@ -277,10 +277,8 @@ class ManufacturingSchedulingFactory:
         idle_stock = full_stock
         replenishing = [None] * steps_per_replenishment
 
-        def serve(stock, demand, replenished_capacity):
-            if stock < demand or (
-                demand > 0 and stock - demand + replenished_capacity < min_remaining
-            ):
+        def serve(stock, demand):
+            if stock < demand or (demand > 0 and stock - demand < min_remaining):
                 return None
             return stock - demand
 
@@ -302,7 +300,7 @@ class ManufacturingSchedulingFactory:
             for steps_done, stock in enumerate(others):
                 if stock is None:
                     continue
-                served = serve(stock, demand, capacity)
+                served = serve(stock, demand)
                 if served is None:
                     continue
                 if steps_done + 1 == steps_per_replenishment:
@@ -314,7 +312,7 @@ class ManufacturingSchedulingFactory:
 
             # no replenishment
             if idle_stock is not None:
-                next_idle = keep_highest(next_idle, serve(idle_stock, demand, 0))
+                next_idle = keep_highest(next_idle, serve(idle_stock, demand))
 
             if next_idle is None and all(s is None for s in next_replenishing):
                 return False
@@ -666,7 +664,7 @@ class ManufacturingSchedulingFactory:
             model, replenish_start_vars, replenish_vars, drawers_per_box_vars
         )
 
-        self.add_robustness_constraints(model, nbox_vars)
+        self.add_robustness_constraints(model, nbox_vars, replenish_vars)
         self.add_quality_metric(model, any_replenish_vars)
 
         return (
@@ -1080,15 +1078,22 @@ class ManufacturingSchedulingFactory:
         return nbox_vars, is_used_vars
 
     def add_robustness_constraints(
-        self, model: cp_model.CpModel, nbox_vars: List[List[Dict[int, cp_model.IntVar]]]
+        self,
+        model: cp_model.CpModel,
+        nbox_vars: List[List[Dict[int, cp_model.IntVar]]],
+        replenish_vars: List[List[List[cp_model.IntVar]]],
     ):
         if self.instance.minimum_remaining_boxes > 0:
-            # FIXME: Remaining boxes may drop below the threshold while replenishment is in progress
+            # after each order, the boxes left in the drawers of its box that are
+            # not being replenished are at least minimum_remaining_boxes: a drawer
+            # being replenished is full but cannot be used
             for order_idx, order in enumerate(self.orders):
                 box_idx = self.box_index[order.box]
+                capacity = self.drawer_capacities[box_idx]
                 model.add(
                     sum(
                         nbox_vars[box_idx][drawer_idx][order_idx]
+                        - capacity * replenish_vars[box_idx][drawer_idx][order_idx]
                         for drawer_idx in range(self.max_num_drawers[box_idx])
                     )
                     >= self.instance.minimum_remaining_boxes

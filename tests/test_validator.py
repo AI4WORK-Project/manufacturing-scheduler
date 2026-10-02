@@ -198,9 +198,13 @@ def test_minimum_remaining_boxes():
     input_data["minimum_remaining_boxes"] = 2
     output = {**copy.deepcopy(OUTPUT), **copy.deepcopy(input_data)}
     assert rules(output, input_data) == {"minimum-remaining"}
-    # A drawer under replenishment counts as full.
+    # A drawer under replenishment counts as empty: drawer 1 is blocked for
+    # orders 13 and 15, so after order 15 only one box A can be taken.
     output["replenishments"] = [{"drawer": 1, "box": "A", "order_id": 13}]
     output["box_constructions"] = [1, 1, 3, 2, 2, 1]
+    assert rules(output, input_data) == {"minimum-remaining"}
+    input_data["minimum_remaining_boxes"] = 1
+    output["minimum_remaining_boxes"] = 1
     assert validate(input_data, output) == []
 
 

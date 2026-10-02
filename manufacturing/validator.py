@@ -20,9 +20,9 @@ step, without relying on the solver or on the dataclasses. The rules are:
   full when the replenishment starts, is blocked while it runs, and is full when
   it ends. Replenishments never overlap, even on different drawers. A
   replenishment may run past the end of the plan.
-- After every construction, for every box type the number of boxes in its
-  drawers must be at least minimum_remaining_boxes, where a drawer under
-  replenishment counts as full.
+- After every construction, the number of boxes of its type that can still be
+  taken must be at least minimum_remaining_boxes: a drawer under replenishment
+  counts as empty, as it cannot be used.
 - The input fields reported in the output must be identical to the input.
 """
 
@@ -344,15 +344,14 @@ def _simulate(problem, mapping, starts, box_constructions, fail):
                 break
         level[d] -= 1
 
-        for b, drawers in drawers_of.items():
-            total = sum(capacity[x] if is_blocked(x, step) else level[x] for x in drawers)
-            if total < problem["min_remaining"]:
-                fail(
-                    "minimum-remaining",
-                    f"box {b} has {total} boxes left, minimum is "
-                    f"{problem['min_remaining']}",
-                    step,
-                )
+        total = sum(0 if is_blocked(x, step) else level[x] for x in drawers_of[box])
+        if total < problem["min_remaining"]:
+            fail(
+                "minimum-remaining",
+                f"box {box} has {total} boxes left, minimum is "
+                f"{problem['min_remaining']}",
+                step,
+            )
 
 
 def main(argv: Optional[List[str]] = None) -> int:
