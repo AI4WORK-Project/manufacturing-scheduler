@@ -5,6 +5,9 @@ from manufacturing import (
     get_solution_with_granularity_fallback,
 )
 from manufacturing.dataclasses.instance import SIZES
+from manufacturing.rolling import get_solution_by_rolling_horizon
+from manufacturing.validator import validate
+import json
 import pathlib
 import os
 from typing import Tuple, List, Optional, Dict
@@ -45,6 +48,94 @@ def test_granularity_fallback_not_solvable():
     with open(os.path.join(tests_path, "instances/instance_not_solvable.json")) as f:
         instance = ManufacturingInstance.from_json(f.read())
     assert get_solution_with_granularity_fallback(instance, strategy="enumerate") is None
+
+
+# small windows, so that the windows start with replenishments running until the
+# cut and need finer granularities
+@pytest.mark.parametrize("planned_orders, committed_orders", [(60, 50), (40, 30)])
+@pytest.mark.parametrize("instance", [1, 2, 3])
+def test_rolling_horizon(instance: int, planned_orders: int, committed_orders: int):
+    instance = load_instance(instance)
+    solution = get_solution_by_rolling_horizon(
+        instance, planned_orders=planned_orders, committed_orders=committed_orders
+    )
+    assert solution is not None
+    validate_solution(solution)
+    violations = validate(
+        json.loads(instance.to_json()), json.loads(solution.to_json())
+    )
+    assert violations == [], "\n".join(str(v) for v in violations)
+    assert_drawers_replenished_once_per_group(solution)
+    assert solution.solver.objective_value == num_replenish_groups(solution)
+    assert solution.is_solution_optimal == (
+        solution.solver.objective_value == solution.solver.best_objective_bound
+    )
+
+
+def test_rolling_horizon_single_window():
+    _, enumerated = solve_instance(1, strategy="enumerate")
+    rolling = get_solution_by_rolling_horizon(load_instance(1))
+    assert rolling.is_solution_optimal
+    assert rolling.solver.objective_value == enumerated.solver.objective_value
+
+
+def test_rolling_horizon_not_solvable():
+    tests_path = pathlib.Path(__file__).parent.resolve()
+    with open(os.path.join(tests_path, "instances/instance_not_solvable.json")) as f:
+        instance = ManufacturingInstance.from_json(f.read())
+    solution = get_solution_by_rolling_horizon(
+        instance, planned_orders=60, committed_orders=50
+    )
+    assert solution is None
+
+
+def test_rolling_horizon_invalid_windows():
+    with pytest.raises(ValueError):
+        get_solution_by_rolling_horizon(
+            load_instance(1), planned_orders=60, committed_orders=55
+        )
+
+
+def load_instance(instance: int) -> ManufacturingInstance:
+    tests_path = pathlib.Path(__file__).parent.resolve()
+    with open(os.path.join(tests_path, f"instances/instance{instance}.json")) as f:
+        return ManufacturingInstance.from_json(f.read())
+
+
+def assert_drawers_replenished_once_per_group(solution: ManufacturingSolution):
+    """Each drawer is replenished at most once in each group of consecutive
+    replenishments, also across the windows of the rolling horizon."""
+    order_index = {
+        order_id: i for i, order_id in enumerate(construction_sequence(solution))
+    }
+    replenishments = sorted(
+        solution.replenishments, key=lambda r: order_index[r.order_id]
+    )
+    group = set()
+    for i, r in enumerate(replenishments):
+        if (
+            i > 0
+            and order_index[replenishments[i - 1].order_id]
+            + solution.box_constructions_per_replenishment
+            < order_index[r.order_id]
+        ):
+            group = set()
+        assert r.drawer not in group
+        group.add(r.drawer)
+
+
+def construction_sequence(solution: ManufacturingSolution) -> List[int]:
+    box_filling_durations = dict(
+        (bfd.box, bfd.filling_duration) for bfd in solution.box_filling_durations
+    )
+    orders = []
+    for operator_order_list in solution.operator_order_lists:
+        start = 0
+        for order in operator_order_list.orders:
+            orders.append(((start, operator_order_list.operator), order.id))
+            start += box_filling_durations[order.box]
+    orders.sort(key=lambda order: order[0])
+    return [order_id for _, order_id in orders]
 
 
 def solve_instance(
