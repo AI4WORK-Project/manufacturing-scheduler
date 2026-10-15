@@ -37,14 +37,15 @@ def get_solution_with_granularity_fallback(
     granularities = [g for g in range(duration, 0, -1) if duration % g == 0]
     start_time = time.time()
     for granularity in granularities:
+        factory = ManufacturingSchedulingFactory(
+            instance, replenishment_granularity=granularity
+        )
+        # the time to build the model is part of the time limit
         remaining = None
         if time_limit is not None:
             remaining = time_limit - (time.time() - start_time)
             if remaining <= 0:
                 break
-        factory = ManufacturingSchedulingFactory(
-            instance, replenishment_granularity=granularity
-        )
         solution = factory.get_solution_by_strategy(strategy, remaining)
         if solution is not None:
             logging.info(
@@ -1324,6 +1325,10 @@ class ManufacturingSchedulingFactory:
                         )
                         continue
 
+            # the lower bound is not added to the model: on these instances it
+            # slows down CP-SAT
+            model = self.restricted_model(config, objective_ub)
+            # the time to build the model is part of the time limit
             config_time_limit = None
             if time_limit is not None:
                 remaining = time_limit - (time.time() - start_time)
@@ -1333,9 +1338,7 @@ class ManufacturingSchedulingFactory:
                 config_time_limit = remaining
 
             solver = self._new_solver(config_time_limit)
-            # the lower bound is not added to the model: on these instances it
-            # slows down CP-SAT
-            status = solver.solve(self.restricted_model(config, objective_ub))
+            status = solver.solve(model)
             user_time += solver.user_time
             logging.info(
                 f"configuration {config}: {solver.status_name(status)}, "
