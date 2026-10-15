@@ -55,10 +55,10 @@ See [instance_solution.json](examples/instances/instance_solution.json) and [ins
 
 ### GET `/last_schedule_gantt`
 
-This endpoint returns the Gantt chart visualization of the last computed schedule as an HTML file.
+This endpoint returns the visualization of the last computed schedule as an HTML file: the boxes left in each drawer along the construction sequence, the replenishments of each drawer and the groups of consecutive replenishments.
 
 #### Response
-- **Success (200)**: Returns an HTML Gantt chart that can be viewed in a browser.
+- **Success (200)**: Returns an HTML chart that can be viewed in a browser.
 - **Error (404)**: If no schedule has been computed yet or the plot file is not found.
 
 ## Running an example
@@ -75,7 +75,7 @@ Alternatively, you can use `curl`:
 curl -X POST --json @examples/instances/instance.json "http://0.0.0.0:5000/schedule?time_limit=60"
 ```
 
-To view the Gantt chart visualization after computing a schedule:
+To view the visualization after computing a schedule:
 ```sh
 curl "http://0.0.0.0:5000/last_schedule_gantt" > schedule.html
 ```
