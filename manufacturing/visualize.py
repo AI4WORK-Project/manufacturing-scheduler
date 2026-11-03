@@ -59,7 +59,7 @@ def plot_solution(
 
     # the replenishment groups, then one row per drawer
     groups_row = 1
-    titles = ["Replenishment groups"] + [
+    titles = [f"Replenishment groups ({len(groups)})"] + [
         f"Drawer {d} ({drawer_size[d]}) · box {mapping[d]} ({box_size[mapping[d]]})"
         for d in drawers
     ]
