@@ -38,8 +38,9 @@ This endpoint accepts a JSON payload representing a scheduling problem and retur
   - `full`: solves the whole model.
   - `enumerate` (default): solves a restricted model for each number of drawers per box, most pressured boxes first, with at most 2 drawers per box (more only if there are more than twice as many drawers as boxes), and returns the best solution.
   - `hint`: solves the restricted model for the first number of drawers per box, then solves the whole model using that solution as a hint.
+  - `rolling`: for each number of drawers per box generated as in `enumerate`, plans the orders in windows of 600 orders and keeps the first 500 of each window, then returns the best plan. It scales to thousands of orders, but the solution is optimal only if it matches the lower bound. With at most 600 orders it is the same as `enumerate`.
 
-Replenishments can start every `box_constructions_per_replenishment` orders. If no solution is found this way, the solver retries letting them start at a finer granularity (e.g. every 5, then 2, then 1 orders) and returns the first solution found. The time limit covers all the attempts.
+Replenishments can start every `box_constructions_per_replenishment` orders. If no solution is found this way, the solver retries letting them start at a finer granularity (e.g. every 5, then 2, then 1 orders) and returns the first solution found; with `rolling`, each window retries on its own. The time limit covers all the attempts.
 
 #### Request Body
 A JSON object describing the scheduling problem. 
