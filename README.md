@@ -121,7 +121,7 @@ python -m pytest tests
 
 The API tests start the server on port 5000 themselves, so the port must be free. The validator tests take a few minutes.
 
-The CI runs the tests on every push. Every push to `main` publishes the Docker image `ghcr.io/ai4work-project/manufacturing-scheduler:latest`, and every tag `vX.Y.Z` publishes `ghcr.io/ai4work-project/manufacturing-scheduler:X.Y.Z`.
+The CI runs the tests on every pull request. Every push to `main` publishes the Docker image `ghcr.io/ai4work-project/manufacturing-scheduler:latest`, and every tag `vX.Y.Z` publishes `ghcr.io/ai4work-project/manufacturing-scheduler:X.Y.Z`.
 
 ## License
 
