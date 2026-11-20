@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import pathlib
+from importlib.metadata import PackageNotFoundError, version
 from flask import Flask, Response, request, send_file
 from manufacturing import (
     ManufacturingInstance,
@@ -11,6 +12,11 @@ from manufacturing import (
 )
 
 logging.basicConfig(level=logging.INFO)
+
+try:
+    __version__ = version("manufacturing")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 app = Flask("Manufacturing-API")
 
@@ -28,6 +34,15 @@ def json_response(body: dict, status: int) -> Response:
         mimetype="application/json",
         status=status,
     )
+
+
+@app.route("/health", methods=["GET"])
+def health_check():
+    """
+    Check if the service is alive and reachable.
+    """
+    logging.debug("Health check pinged.")
+    return json_response({"status": "healthy", "version": __version__}, 200)
 
 
 def validation_error_response(error: Exception) -> Response:
