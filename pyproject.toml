@@ -7,6 +7,7 @@ name = "manufacturing"
 version = "0.1.0"
 description = "Human-Aware Task Planner – Packaging Machine Management"
 license = "EPL-2.0"
+requires-python = ">=3.10"
 dependencies = [
     "ortools==9.12.4544",
     "matplotlib==3.10.1",
@@ -30,3 +31,4 @@ test = [
     "pytest",
     "requests"
 ]
+example = ["requests"]
