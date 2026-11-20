@@ -3,9 +3,17 @@ import json
 import logging
 import pathlib
 from importlib.metadata import PackageNotFoundError, version
-from flask import Flask, Response, request, send_file
+
+from apiflask import APIFlask, Schema
+from apiflask.fields import Integer, String
+from apiflask.validators import OneOf
+from flask import Response, request, send_file
+from marshmallow import EXCLUDE
+from marshmallow_dataclass import class_schema
+
 from manufacturing import (
     ManufacturingInstance,
+    ManufacturingSolution,
     STRATEGIES,
     get_solution_with_granularity_fallback,
     plot_solution,
@@ -18,7 +26,55 @@ try:
 except PackageNotFoundError:
     __version__ = "unknown"
 
-app = Flask("Manufacturing-API")
+app = APIFlask(
+    "Manufacturing-API",
+    title="Human-Aware Task Planner – Packaging Machine Management",
+    version=__version__,
+)
+app.openapi_version = "3.0.2"
+
+
+class DocSchema(Schema):
+    """The schemas only document the API: the input is parsed and validated by
+    the dataclasses, so validation is disabled and unknown fields are ignored."""
+
+    class Meta:
+        unknown = EXCLUDE
+
+
+InstanceSchema = class_schema(ManufacturingInstance, base_schema=DocSchema)
+SolutionSchema = class_schema(ManufacturingSolution, base_schema=DocSchema)
+
+
+class ScheduleQuerySchema(Schema):
+    time_limit = Integer(
+        required=False,
+        metadata={
+            "description": "Time limit in seconds for the solver, covering all the "
+            "attempts. If not provided, the solver runs without a time limit."
+        },
+    )
+    strategy = String(
+        required=False,
+        load_default="enumerate",
+        validate=OneOf(STRATEGIES),
+        metadata={
+            "description": "How the solver searches for a solution: full, "
+            "enumerate (default), hint or rolling. See the README for details."
+        },
+    )
+
+
+class HealthSchema(Schema):
+    status = String(metadata={"example": "healthy"})
+    version = String(metadata={"example": __version__})
+
+
+ERROR_RESPONSES = {
+    400: "No solution has been found for the given problem",
+    422: 'Invalid input: {"message": "Validation error", "detail": "..."}',
+    500: 'Internal server error: {"message": "..."}',
+}
 
 plot_img_path = os.path.join(
     pathlib.Path(__file__).parent.resolve(), "saved_plots", "plot.png"
@@ -36,11 +92,10 @@ def json_response(body: dict, status: int) -> Response:
     )
 
 
-@app.route("/health", methods=["GET"])
+@app.get("/health")
+@app.output(HealthSchema)
+@app.doc(summary="Check if the service is alive and reachable")
 def health_check():
-    """
-    Check if the service is alive and reachable.
-    """
     logging.debug("Health check pinged.")
     return json_response({"status": "healthy", "version": __version__}, 200)
 
@@ -54,8 +109,12 @@ def validation_error_response(error: Exception) -> Response:
     return json_response({"message": "Validation error", "detail": detail}, 422)
 
 
-@app.route("/schedule", methods=["POST"])
-def schedule():
+@app.post("/schedule")
+@app.input(ScheduleQuerySchema, location="query", validation=False)
+@app.input(InstanceSchema, location="json", validation=False)
+@app.output(SolutionSchema)
+@app.doc(summary="Compute a replenishment schedule", responses=ERROR_RESPONSES)
+def schedule(query_data, json_data):
     logging.info("Schedule request received!")
 
     time_limit = request.args.get("time_limit", None, type=int)
@@ -93,7 +152,17 @@ def schedule():
     return Response(solution.to_json(), mimetype="application/json", status=200)
 
 
-@app.route("/last_schedule_gantt", methods=["GET"])
+@app.get("/last_schedule_gantt")
+@app.doc(
+    summary="Visualize the last computed schedule",
+    description="HTML chart of the boxes left in each drawer along the "
+    "construction sequence, the replenishments of each drawer and the groups of "
+    "consecutive replenishments in the last schedule computed by /schedule.",
+    responses={
+        200: {"description": "HTML visualization", "content": {"text/html": {}}},
+        404: "No schedule has been computed yet",
+    },
+)
 def last_schedule_gantt():
     logging.info("Received request for the last generated schedule plot html.")
     if not os.path.exists(plot_html_path):
