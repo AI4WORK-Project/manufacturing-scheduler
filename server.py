@@ -1,13 +1,12 @@
-import os
 import json
 import logging
-import pathlib
+import threading
 from importlib.metadata import PackageNotFoundError, version
 
 from apiflask import APIFlask, Schema
 from apiflask.fields import Integer, String
 from apiflask.validators import OneOf
-from flask import Response, request, send_file
+from flask import Response, request
 from marshmallow import EXCLUDE
 from marshmallow_dataclass import class_schema
 
@@ -16,7 +15,7 @@ from manufacturing import (
     ManufacturingSolution,
     STRATEGIES,
     get_solution_with_granularity_fallback,
-    plot_solution,
+    solution_figure,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -76,12 +75,30 @@ ERROR_RESPONSES = {
     500: 'Internal server error: {"message": "..."}',
 }
 
-plot_img_path = os.path.join(
-    pathlib.Path(__file__).parent.resolve(), "saved_plots", "plot.png"
-)
-plot_html_path = os.path.join(
-    pathlib.Path(__file__).parent.resolve(), "saved_plots", "plot.html"
-)
+
+
+class LastScheduleGantt:
+    """HTML visualization of the last computed schedule, kept in memory."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._html = None
+
+    def update(self, solution):
+        try:
+            html = solution_figure(solution).to_html(include_plotlyjs="cdn")
+        except Exception:
+            logging.warning("Could not visualize the schedule", exc_info=True)
+            html = None
+        with self._lock:
+            self._html = html
+
+    def get(self):
+        with self._lock:
+            return self._html
+
+
+last_schedule_gantt_html = LastScheduleGantt()
 
 
 def json_response(body: dict, status: int) -> Response:
@@ -136,19 +153,18 @@ def schedule(query_data, json_data):
         solution = get_solution_with_granularity_fallback(
             instance, time_limit=time_limit, strategy=strategy
         )
-        if solution is not None:
-            logging.info(f"Solution found")
-            plot_solution(solution, image_path=plot_img_path, html_path=plot_html_path)
-        else:
+        if solution is None:
             logging.info("No solution has been found for the given problem")
             return json_response(
                 {"message": "No solution has been found for the given problem"}, 400
             )
+        logging.info("Solution found")
 
     except Exception as e:
         logging.exception("Error while computing the schedule")
         return json_response({"message": str(e)}, 500)
 
+    last_schedule_gantt_html.update(solution)
     return Response(solution.to_json(), mimetype="application/json", status=200)
 
 
@@ -165,9 +181,10 @@ def schedule(query_data, json_data):
 )
 def last_schedule_gantt():
     logging.info("Received request for the last generated schedule plot html.")
-    if not os.path.exists(plot_html_path):
+    html = last_schedule_gantt_html.get()
+    if html is None:
         return json_response({"message": "Gantt html not found"}, 404)
-    return send_file(plot_html_path, mimetype="text/html")
+    return Response(html, mimetype="text/html")
 
 
 if __name__ == "__main__":

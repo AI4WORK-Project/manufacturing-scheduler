@@ -20,7 +20,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-exclude = ["saved_plots*"]
+include = ["manufacturing*"]
 
 [project.optional-dependencies]
 test = [
