@@ -17,7 +17,7 @@ class Box:
         self.validate()
 
     def validate(self):
-        assert self.size in SIZES
+        assert self.size in SIZES, f"Invalid box size {self.size}"
 
 
 @dataclass_json
