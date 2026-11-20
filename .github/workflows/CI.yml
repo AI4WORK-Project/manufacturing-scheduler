@@ -30,6 +30,9 @@ jobs:
       - name: Run solver tests
         run: |
           python -m pytest -v ./tests/test_solver.py
+      - name: Run validator tests
+        run: |
+          python -m pytest -v ./tests/test_validator.py
       - name: Run API tests
         run: |
           python server.py &
