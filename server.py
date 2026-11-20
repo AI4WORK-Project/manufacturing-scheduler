@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import pathlib
 from flask import Flask, Response, request, send_file
@@ -21,6 +22,14 @@ plot_html_path = os.path.join(
 )
 
 
+def json_response(body: dict, status: int) -> Response:
+    return Response(
+        json.dumps(body, separators=(",", ":")),
+        mimetype="application/json",
+        status=status,
+    )
+
+
 @app.route("/schedule", methods=["POST"])
 def schedule():
     try:
@@ -34,11 +43,7 @@ def schedule():
         strategy = request.args.get("strategy", "enumerate", type=str)
         logging.info(f"Strategy: {strategy}")
         if strategy not in STRATEGIES:
-            return Response(
-                '{"message":"Unknown strategy %s"}' % strategy,
-                mimetype="application/json",
-                status=400,
-            )
+            return json_response({"message": f"Unknown strategy {strategy}"}, 400)
         solution = get_solution_with_granularity_fallback(
             instance, time_limit=time_limit, strategy=strategy
         )
@@ -47,16 +52,13 @@ def schedule():
             plot_solution(solution, image_path=plot_img_path, html_path=plot_html_path)
         else:
             logging.info("No solution has been found for the given problem")
-            return Response(
-                '{"message":"No solution has been found for the given problem"}',
-                mimetype="application/json",
-                status=400,
+            return json_response(
+                {"message": "No solution has been found for the given problem"}, 400
             )
 
     except Exception as e:
-        return Response(
-            '{"message":"%s"}' % str(e), mimetype="application/json", status=500
-        )
+        logging.exception("Error while computing the schedule")
+        return json_response({"message": str(e)}, 500)
 
     return Response(solution.to_json(), mimetype="application/json", status=200)
 
@@ -65,11 +67,7 @@ def schedule():
 def last_schedule_gantt():
     logging.info("Received request for the last generated schedule plot html.")
     if not os.path.exists(plot_html_path):
-        return Response(
-            '{"message":"Gantt html not found"}',
-            mimetype="application/json",
-            status=404,
-        )
+        return json_response({"message": "Gantt html not found"}, 404)
     return send_file(plot_html_path, mimetype="text/html")
 
 
