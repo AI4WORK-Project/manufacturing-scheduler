@@ -7,6 +7,7 @@ from apiflask import APIFlask, Schema
 from apiflask.fields import Integer, String
 from apiflask.validators import OneOf
 from flask import Response, request
+from flask_cors import CORS
 from marshmallow import EXCLUDE
 from marshmallow_dataclass import class_schema
 
@@ -31,6 +32,7 @@ app = APIFlask(
     version=__version__,
 )
 app.openapi_version = "3.0.2"
+CORS(app)
 
 
 class DocSchema(Schema):
