@@ -4,7 +4,6 @@ WORKDIR /app
 
 COPY pyproject.toml /app/
 COPY manufacturing/ /app/manufacturing/
-COPY saved_plots/ /app/saved_plots/
 COPY server.py /app/
 
 # Install the manufacturing package and dependencies

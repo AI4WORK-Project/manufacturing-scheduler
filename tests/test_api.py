@@ -7,6 +7,7 @@ from typing import Dict
 
 URL = "http://0.0.0.0:5000/schedule"
 HEALTH_URL = "http://0.0.0.0:5000/health"
+GANTT_URL = "http://0.0.0.0:5000/last_schedule_gantt"
 INSTANCES_PATH = os.path.join(pathlib.Path(__file__).parent.resolve(), "instances")
 
 
@@ -67,3 +68,8 @@ def test_valid_instance():
     instance = load_instance_json("instance0.json")
     response = requests.post(URL, params={"time_limit": 10 * 60}, json=instance)
     assert response.status_code == 200
+
+    response = requests.get(GANTT_URL)
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("text/html")
+    assert "plotly" in response.text
