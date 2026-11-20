@@ -1,7 +1,7 @@
 from manufacturing import (
     ManufacturingInstance,
     ManufacturingSolution,
-    ManufacturingSchedulingFactory,
+    get_solution_with_granularity_fallback,
     plot_solution,
 )
 import pathlib
@@ -17,13 +17,17 @@ def main():
     with open(problem_data) as f:
         instance: ManufacturingInstance = ManufacturingInstance.from_dict(json.load(f))
 
-    factory = ManufacturingSchedulingFactory(instance)
-    solution: ManufacturingSolution = factory.get_solution()
+    # same default strategy as the REST API
+    solution: ManufacturingSolution = get_solution_with_granularity_fallback(
+        instance, time_limit=60, strategy="enumerate"
+    )
     if solution is not None:
         with open(solution_data, "w") as f:
             f.write(json.dumps(json.loads(solution.to_json()), indent=4))
 
-        plot_solution(instance, solution)
+        plot_solution(solution)
+    else:
+        print("No solution.")
 
 
 if __name__ == "__main__":

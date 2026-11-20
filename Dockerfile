@@ -1,17 +1,25 @@
-FROM python:3.12
+FROM python:3.12-slim
+
+LABEL org.opencontainers.image.source="https://github.com/AI4WORK-Project/manufacturing-scheduler" \
+      org.opencontainers.image.description="Human-Aware Task Planner – Packaging Machine Management" \
+      org.opencontainers.image.licenses="EPL-2.0"
 
 WORKDIR /app
 
-COPY pyproject.toml /app/
-COPY manufacturing/ /app/manufacturing/
-COPY saved_plots/ /app/saved_plots/
-COPY server.py /app/
-
 # Install the manufacturing package and dependencies
+COPY pyproject.toml /app/
 RUN pip install /app/
+
+COPY LICENSE NOTICE /app/
+COPY manufacturing/ /app/manufacturing/
+COPY server.py /app/
 
 # Expose the port of the server
 EXPOSE 5000
+
+# Report the container as unhealthy if the server stops answering
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=4)"
 
 # Run the server
 CMD ["python", "server.py"]

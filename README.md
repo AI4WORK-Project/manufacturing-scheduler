@@ -1,40 +1,60 @@
-# Manufacturing Scheduler
+# Human-Aware Task Planner – Packaging Machine Management
 
-This repository contains the `manufacturing` Python package and the REST API server ([server.py](server.py)). The application is containerized using Docker.
+Repository: `manufacturing-scheduler`
 
-The scheduler uses a static configuration defined in [configuration.json](configuration.json) along with the problem data received via the REST API to compute a solution.
-Make sure to modify the configuration file *before* building and running the Docker image.
+The Packaging Machine Management variant of the AI4Work Human-Aware Task Planner computes the replenishment schedule of a packaging machine: the assignment of box types to the machine drawers and the replenishments that the operators perform while the machine processes the production orders received from the ERP.
+It is exposed as a REST service (`server.py`) on top of the `manufacturing` Python package, and it is distributed as a Docker image.
 
-## Docker Image
-To build the Docker image, run:
+The schedule satisfies hard constraints and optimizes the working conditions of the replenishment operators:
+
+- **Hard constraints**: each drawer holds one box type that fits its size, the machine never runs out of the boxes required by the orders, replenishments do not overlap and a drawer under replenishment cannot be used.
+- **Robustness**: after every box construction, at least `minimum_remaining_boxes` boxes of its type are still available, so that the plan remains executable under operational variability.
+- **Human-aware objective**: the number of groups of consecutive replenishments is minimized, which reduces the fragmentation of the operators' work, i.e. interruptions and task switching. The resulting `index_of_fragmentation` is reported in the output.
+
+The optimization model is solved with the OR-Tools CP-SAT solver.
+
+## Quick start
+
+Run the published Docker image:
+
+```sh
+docker run -p 5000:5000 ghcr.io/ai4work-project/manufacturing-scheduler:latest
+```
+
+Or build the image from source:
 
 ```sh
 docker build -t manufacturing-scheduler .
-```
-
-## Running the Container
-To run the container and expose the application on port 5000, execute:
-
-```sh
 docker run -p 5000:5000 manufacturing-scheduler
 ```
 
-## Accessing the Application
-Once the container is running, you can access the application at:
+Or install the package and run the server directly (Python 3.10 or later; the image and CI use 3.12):
 
-```
-http://0.0.0.0:5000
+```sh
+pip install .
+python server.py
 ```
 
-## Calling the API
+The service listens on port 5000. The interactive API documentation is available at <http://localhost:5000/docs>.
+
+## API
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/schedule` | Computes a replenishment schedule for the given problem |
+| `GET` | `/last_schedule_gantt` | HTML visualization of the last computed schedule |
+| `GET` | `/health` | Health check |
+| `GET` | `/docs` | Interactive API documentation (Swagger UI) |
+| `GET` | `/openapi.json` | OpenAPI specification |
 
 ### POST `/schedule`
 
-This endpoint accepts a JSON payload representing a scheduling problem and returns the solution.
+Computes a replenishment schedule for the problem described by the JSON request body.
 
-#### Query Parameters
-- `time_limit`: (Optional, int) The time limit in seconds for the solver. If not provided, the solver will run without a time constraint.
-- `strategy`: (Optional, string) How the solver searches for a solution:
+#### Query parameters
+
+- `time_limit` (optional, int): time limit in seconds for the solver. If not provided, the solver runs without a time limit.
+- `strategy` (optional, string): how the solver searches for a solution:
   - `full`: solves the whole model.
   - `enumerate` (default): solves a restricted model for each number of drawers per box, most pressured boxes first, with at most 2 drawers per box (more only if there are more than twice as many drawers as boxes), and returns the best solution.
   - `hint`: solves the restricted model for the first number of drawers per box, then solves the whole model using that solution as a hint.
@@ -42,42 +62,73 @@ This endpoint accepts a JSON payload representing a scheduling problem and retur
 
 Replenishments can start every `box_constructions_per_replenishment` orders. If no solution is found this way, the solver retries letting them start at a finer granularity (e.g. every 5, then 2, then 1 orders) and returns the first solution found; with `rolling`, each window retries on its own. The time limit covers all the attempts.
 
-#### Request Body
-A JSON object describing the scheduling problem. 
-See [instance.json](examples/instances/instance.json) and [instance_annotated.json](examples/instances/instance_annotated.json) for an example.
+#### Request body
 
-#### Response
-- **Success (200)**: If a solution is found, the response will contain a JSON object representing the solution.
-See [instance_solution.json](examples/instances/instance_solution.json) and [instance_solution_annotated.json](examples/instances/instance_solution_annotated.json) for an example.
+A JSON object describing the problem: operators, box types, drawers and their capacities, replenishment duration, box filling durations, minimum remaining boxes and the orders.
+See:
 
-- **Error (400)**: If no solution is found for the given problem, a message will be returned indicating that no solution was found.
+- [instance_description.md](examples/instances/instance_description.md): description of the input and output fields;
+- [instance.json](examples/instances/instance.json) and [instance_annotated.json](examples/instances/instance_annotated.json): example request;
+- [instance_schema.json](examples/instances/instance_schema.json): JSON schema of the request.
 
-- **Error (500)**: If an internal server error occurs, an error message will be returned.
+Unknown fields are ignored.
+
+#### Responses
+
+- **200**: the input fields, augmented with the orders of each operator, the drawer box mapping, the replenishments, the sequence of drawers used for the box constructions, the index of fragmentation and the solver statistics. See [instance_solution.json](examples/instances/instance_solution.json), [instance_solution_annotated.json](examples/instances/instance_solution_annotated.json) and [instance_solution_schema.json](examples/instances/instance_solution_schema.json).
+- **400**: no solution has been found: `{"message": "No solution has been found for the given problem"}`.
+- **422**: the input or the strategy is not valid: `{"message": "Validation error", "detail": "<reason>"}`.
+- **500**: internal server error: `{"message": "<reason>"}`.
 
 ### GET `/last_schedule_gantt`
 
-This endpoint returns the visualization of the last computed schedule as an HTML file: the boxes left in each drawer along the construction sequence, the replenishments of each drawer and the groups of consecutive replenishments.
+Returns an HTML chart of the last schedule computed by `/schedule`: the boxes left in each drawer along the construction sequence, the replenishments of each drawer and the groups of consecutive replenishments.
 
-#### Response
-- **Success (200)**: Returns an HTML chart that can be viewed in a browser.
-- **Error (404)**: If no schedule has been computed yet or the plot file is not found.
+- **200**: the HTML page, to be viewed in a browser.
+- **404**: no schedule has been computed yet: `{"message": "Gantt html not found"}`.
 
-## Running an example
-To test the API, you can run the `client_example.py` script:
+### GET `/health`
+
+Returns `{"status": "healthy", "version": "<version>"}` if the service is up and reachable.
+The Docker image uses it as its `HEALTHCHECK`.
+
+## Examples
+
+With the server running:
 
 ```sh
-python examples/client_example.py
+# compute a schedule
+curl -X POST --json @examples/instances/instance.json "http://localhost:5000/schedule?time_limit=60"
+
+# save the visualization of the last schedule and open it in a browser
+curl "http://localhost:5000/last_schedule_gantt" > schedule.html
 ```
 
-This script sends a request to the running server and prints the response.
+The [examples](examples) folder also contains:
 
-Alternatively, you can use `curl`:
+- [client_example.py](examples/client_example.py): sends a request to the server and prints the response;
+- [client_example_with_visualization.py](examples/client_example_with_visualization.py): sends a request and shows the visualization of the schedule;
+- [example.py](examples/example.py): solves an instance using the `manufacturing` package directly, without the server.
+
+The client examples need `requests`: `pip install .[example]`.
+
+## Development
+
 ```sh
-curl -X POST --json @examples/instances/instance.json "http://0.0.0.0:5000/schedule?time_limit=60"
+pip install .[test]
+python -m pytest tests
 ```
 
-To view the visualization after computing a schedule:
-```sh
-curl "http://0.0.0.0:5000/last_schedule_gantt" > schedule.html
-```
-Then open `schedule.html` in your web browser.
+The API tests start the server on port 5000 themselves, so the port must be free. The validator tests take a few minutes.
+
+The CI runs the tests on every pull request. Every push to `main` publishes the Docker image `ghcr.io/ai4work-project/manufacturing-scheduler:latest`, and every tag `vX.Y.Z` publishes `ghcr.io/ai4work-project/manufacturing-scheduler:X.Y.Z`.
+
+## License
+
+Copyright (c) 2025-2026 Fondazione Bruno Kessler.
+
+This software is distributed under the [Eclipse Public License 2.0](LICENSE) (`EPL-2.0`). See [NOTICE](NOTICE).
+
+## Acknowledgements
+
+This software has been developed within the AI4Work project, which has received funding from the European Union's Horizon Europe research and innovation programme under grant agreement No 101135990.

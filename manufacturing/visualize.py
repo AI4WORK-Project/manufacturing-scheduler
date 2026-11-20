@@ -8,14 +8,10 @@ GROUP_LINE_COLOR = "rgba(0,0,0,0.35)"
 GROUP_COLOR = "rgba(0,0,0,0.06)"
 
 
-def plot_solution(
-    solution: ManufacturingSolution,
-    image_path: Optional[str] = None,
-    html_path: Optional[str] = None,
-):
-    """Plots the boxes left in each drawer along the construction sequence, the
-    replenishments of each drawer and the groups of consecutive replenishments.
-    The figure is shown if no path is given."""
+def solution_figure(solution: ManufacturingSolution) -> go.Figure:
+    """Builds the figure of the boxes left in each drawer along the construction
+    sequence, the replenishments of each drawer and the groups of consecutive
+    replenishments."""
     k = solution.box_constructions_per_replenishment
     order_ids = construction_sequence(solution)
     order_index = {order_id: i for i, order_id in enumerate(order_ids)}
@@ -176,7 +172,17 @@ def plot_solution(
         showlegend=False,
         margin=dict(l=60, r=20, t=40, b=50),
     )
+    return fig
 
+
+def plot_solution(
+    solution: ManufacturingSolution,
+    image_path: Optional[str] = None,
+    html_path: Optional[str] = None,
+):
+    """Plots the figure of solution_figure. The figure is shown if no path is
+    given."""
+    fig = solution_figure(solution)
     if image_path is None and html_path is None:
         fig.show()
     if image_path is not None:
