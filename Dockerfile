@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 
+LABEL org.opencontainers.image.source="https://github.com/AI4WORK-Project/manufacturing-scheduler" \
+      org.opencontainers.image.description="Human-Aware Task Planner – Packaging Machine Management" \
+      org.opencontainers.image.licenses="EPL-2.0"
+
 WORKDIR /app
 
 # Install the manufacturing package and dependencies
