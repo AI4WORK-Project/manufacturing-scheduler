@@ -18,8 +18,34 @@ def load_instance_json(instance_name: str) -> Dict:
 
 def test_invalid_instance():
     response = requests.post(URL, json="")
-    assert response.status_code == 500
-    assert len(response.json()["message"]) > 0
+    assert response.status_code == 422
+    assert response.json()["message"] == "Validation error"
+    assert len(response.json()["detail"]) > 0
+
+
+def test_missing_field():
+    instance = load_instance_json("instance0.json")
+    del instance["operators"]
+    response = requests.post(URL, json=instance)
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Missing field 'operators'"
+
+
+def test_invalid_field_value():
+    instance = load_instance_json("instance0.json")
+    instance["operators"] = 0
+    response = requests.post(URL, json=instance)
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"] == "The number of operators must be greater than zero"
+    )
+
+
+def test_unknown_strategy():
+    instance = load_instance_json("instance0.json")
+    response = requests.post(URL, params={"strategy": "unknown"}, json=instance)
+    assert response.status_code == 422
+    assert response.json()["detail"].startswith("Unknown strategy unknown")
 
 
 def test_instance_not_solvable():

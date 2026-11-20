@@ -30,20 +30,35 @@ def json_response(body: dict, status: int) -> Response:
     )
 
 
+def validation_error_response(error: Exception) -> Response:
+    if isinstance(error, KeyError):
+        detail = f"Missing field {error}"
+    else:
+        detail = str(error) or type(error).__name__
+    logging.error(f"Validation: {detail}")
+    return json_response({"message": "Validation error", "detail": detail}, 422)
+
+
 @app.route("/schedule", methods=["POST"])
 def schedule():
+    logging.info("Schedule request received!")
+
+    time_limit = request.args.get("time_limit", None, type=int)
+    logging.info(f"Time limit: {time_limit}")
+
+    strategy = request.args.get("strategy", "enumerate", type=str)
+    logging.info(f"Strategy: {strategy}")
+
     try:
-        logging.info("Schedule request received!")
-
-        instance: ManufacturingInstance = ManufacturingInstance.from_dict(request.json)
-
-        time_limit = request.args.get("time_limit", None, type=int)
-        logging.info(f"Time limit: {time_limit}")
-
-        strategy = request.args.get("strategy", "enumerate", type=str)
-        logging.info(f"Strategy: {strategy}")
         if strategy not in STRATEGIES:
-            return json_response({"message": f"Unknown strategy {strategy}"}, 400)
+            raise ValueError(
+                f"Unknown strategy {strategy}, expected one of {', '.join(STRATEGIES)}"
+            )
+        instance: ManufacturingInstance = ManufacturingInstance.from_dict(request.json)
+    except Exception as e:
+        return validation_error_response(e)
+
+    try:
         solution = get_solution_with_granularity_fallback(
             instance, time_limit=time_limit, strategy=strategy
         )
