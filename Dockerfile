@@ -2,12 +2,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY pyproject.toml LICENSE NOTICE /app/
+# Install the manufacturing package and dependencies
+COPY pyproject.toml /app/
+RUN pip install /app/
+
+COPY LICENSE NOTICE /app/
 COPY manufacturing/ /app/manufacturing/
 COPY server.py /app/
-
-# Install the manufacturing package and dependencies
-RUN pip install /app/
 
 # Expose the port of the server
 EXPOSE 5000
