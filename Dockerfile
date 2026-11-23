@@ -6,12 +6,15 @@ LABEL org.opencontainers.image.source="https://github.com/AI4WORK-Project/manufa
 
 WORKDIR /app
 
-# Install the manufacturing package and dependencies
+# Install the dependencies first, so that changing only the code does not
+# reinstall them
 COPY pyproject.toml /app/
 RUN pip install /app/
 
+# Install the manufacturing package
 COPY LICENSE NOTICE /app/
 COPY manufacturing/ /app/manufacturing/
+RUN pip install --no-deps /app/
 COPY server.py /app/
 
 # Expose the port of the server
