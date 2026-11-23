@@ -86,6 +86,9 @@ Returns an HTML chart of the last schedule computed by `/schedule`: the boxes le
 
 - **200**: the HTML page, to be viewed in a browser.
 - **404**: no schedule has been computed yet: `{"message": "Gantt html not found"}`.
+- **500**: the last schedule could not be visualized: `{"message": "The last schedule could not be visualized"}`.
+
+The page is rendered when it is first requested, so computing a schedule does not wait for its visualization.
 
 ### GET `/health`
 
