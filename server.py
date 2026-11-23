@@ -8,7 +8,7 @@ from apiflask.fields import Integer, String
 from apiflask.validators import OneOf, Range
 from flask import Response, request
 from flask_cors import CORS
-from marshmallow import EXCLUDE
+from marshmallow import EXCLUDE, RAISE
 from marshmallow_dataclass import class_schema
 from werkzeug.exceptions import BadRequest
 
@@ -46,6 +46,32 @@ class DocSchema(Schema):
 
 InstanceSchema = class_schema(ManufacturingInstance, base_schema=DocSchema)
 SolutionSchema = class_schema(ManufacturingSolution, base_schema=DocSchema)
+
+
+class UnknownFieldsSchema(Schema):
+    """Base of the schema used only to find the unknown fields of a request."""
+
+    class Meta:
+        unknown = RAISE
+
+
+InstanceUnknownFieldsSchema = class_schema(
+    ManufacturingInstance, base_schema=UnknownFieldsSchema
+)
+
+
+def unknown_fields(data) -> list[str]:
+    """Return the paths of the fields of the request that are not part of an
+    instance, such as boxes.0.sise: they are ignored."""
+
+    def paths(errors: dict, prefix: str):
+        for key, value in errors.items():
+            if value == ["Unknown field."]:
+                yield f"{prefix}{key}"
+            elif isinstance(value, dict):
+                yield from paths(value, f"{prefix}{key}.")
+
+    return sorted(paths(InstanceUnknownFieldsSchema().validate(data), ""))
 
 
 class ScheduleQuerySchema(Schema):
@@ -183,6 +209,9 @@ def schedule(query_data, json_data):
         instance: ManufacturingInstance = ManufacturingInstance.from_dict(request.json)
     except Exception as e:
         return validation_error_response(e)
+
+    if ignored := unknown_fields(request.json):
+        logging.warning(f"Ignoring unknown fields: {', '.join(ignored)}")
     logging.info(f"Time limit: {time_limit}")
     logging.info(f"Strategy: {strategy}")
 

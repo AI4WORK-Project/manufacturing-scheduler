@@ -111,6 +111,15 @@ def test_unknown_strategy():
     assert response.json()["detail"].startswith("Unknown strategy unknown")
 
 
+def test_unknown_fields():
+    instance = load_instance_json("instance0.json")
+    assert server.unknown_fields(instance) == []
+
+    instance["minimum_remaining_box"] = 1
+    instance["boxes"][1]["sise"] = "M"
+    assert server.unknown_fields(instance) == ["boxes.1.sise", "minimum_remaining_box"]
+
+
 def test_instance_not_solvable():
     instance = load_instance_json("instance_not_solvable.json")
     response = requests.post(URL, json=instance)
