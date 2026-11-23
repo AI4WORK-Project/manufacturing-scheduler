@@ -3,13 +3,14 @@ import logging
 import threading
 from importlib.metadata import PackageNotFoundError, version
 
-from apiflask import APIFlask, Schema
+from apiflask import APIFlask, HTTPError, Schema
 from apiflask.fields import Integer, String
 from apiflask.validators import OneOf
 from flask import Response, request
 from flask_cors import CORS
 from marshmallow import EXCLUDE
 from marshmallow_dataclass import class_schema
+from werkzeug.exceptions import BadRequest
 
 from manufacturing import (
     ManufacturingInstance,
@@ -126,6 +127,16 @@ def validation_error_response(error: Exception) -> Response:
         detail = str(error) or type(error).__name__
     logging.error(f"Validation: {detail}")
     return json_response({"message": "Validation error", "detail": detail}, 422)
+
+
+@app.errorhandler(BadRequest)
+def bad_request(error: BadRequest) -> Response:
+    # the request parser attaches the decoding error to the 400 it raises for a
+    # body that is not valid JSON: report it as invalid input, as documented
+    decoding_error = getattr(error, "exc", None)
+    if isinstance(decoding_error, (json.JSONDecodeError, UnicodeDecodeError)):
+        return validation_error_response(ValueError(f"Invalid JSON: {decoding_error}"))
+    return app.error_callback(HTTPError(400, message=error.name))
 
 
 @app.post("/schedule")

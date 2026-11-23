@@ -77,7 +77,7 @@ Unknown fields are ignored.
 
 - **200**: the input fields, augmented with the orders of each operator, the drawer box mapping, the replenishments, the sequence of drawers used for the box constructions, the index of fragmentation and the solver statistics. See [instance_solution.json](examples/instances/instance_solution.json), [instance_solution_annotated.json](examples/instances/instance_solution_annotated.json) and [instance_solution_schema.json](examples/instances/instance_solution_schema.json).
 - **400**: no solution has been found: `{"message": "No solution has been found for the given problem"}`.
-- **422**: the input or the strategy is not valid: `{"message": "Validation error", "detail": "<reason>"}`.
+- **422**: the input or the strategy is not valid, including a body that is not valid JSON: `{"message": "Validation error", "detail": "<reason>"}`.
 - **500**: internal server error: `{"message": "<reason>"}`.
 
 ### GET `/last_schedule_gantt`
