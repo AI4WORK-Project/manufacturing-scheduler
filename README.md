@@ -53,7 +53,7 @@ Computes a replenishment schedule for the problem described by the JSON request 
 
 #### Query parameters
 
-- `time_limit` (optional, int): time limit in seconds for the solver. If not provided, the solver runs without a time limit.
+- `time_limit` (optional, positive int): time limit in seconds for the solver. If not provided, the solver runs without a time limit; any other value returns 422.
 - `strategy` (optional, string): how the solver searches for a solution:
   - `full`: solves the whole model.
   - `enumerate` (default): solves a restricted model for each number of drawers per box, most pressured boxes first, with at most 2 drawers per box (more only if there are more than twice as many drawers as boxes), and returns the best solution.
