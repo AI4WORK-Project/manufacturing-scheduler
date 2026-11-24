@@ -3,7 +3,7 @@
 Repository: `manufacturing-scheduler`
 
 The Packaging Machine Management variant of the AI4Work Human-Aware Task Planner computes the replenishment schedule of a packaging machine: the assignment of box types to the machine drawers and the replenishments that the operators perform while the machine processes the production orders received from the ERP.
-It is exposed as a REST service (`server.py`) on top of the `manufacturing` Python package, and it is distributed as a Docker image.
+It is exposed as a REST service (`server.py`), and optionally as a [Kafka](#kafka) consumer, on top of the `manufacturing` Python package, and it is distributed as a Docker image.
 
 The schedule satisfies hard constraints and optimizes the working conditions of the replenishment operators:
 
@@ -82,7 +82,7 @@ Unknown fields are ignored, and the server logs a warning that lists them.
 
 ### GET `/last_schedule_gantt`
 
-Returns an HTML chart of the last schedule computed by `/schedule`: the boxes left in each drawer along the construction sequence, the replenishments of each drawer and the groups of consecutive replenishments.
+Returns an HTML chart of the last schedule computed by `/schedule` or for a Kafka request: the boxes left in each drawer along the construction sequence, the replenishments of each drawer and the groups of consecutive replenishments.
 
 - **200**: the HTML page, to be viewed in a browser.
 - **404**: no schedule has been computed yet: `{"message": "Gantt html not found"}`.
@@ -93,7 +93,44 @@ The page is rendered when it is first requested, so computing a schedule does no
 ### GET `/health`
 
 Returns `{"status": "healthy", "version": "<version>"}` if the service is up and reachable.
+When the Kafka consumer is enabled, the response also contains `"kafka": "running"`, and the status is 503 with `{"status": "unhealthy", "kafka": "stopped", ...}` if the consumer has stopped.
 The Docker image uses it as its `HEALTHCHECK`.
+
+## Kafka
+
+The scheduler can also receive the instances from a Kafka topic and send each schedule to a reply topic.
+The Kafka consumer runs next to the HTTP API, which stays available, when `KAFKA_BOOTSTRAP_SERVER` is set:
+
+| Variable | Description |
+|---|---|
+| `KAFKA_BOOTSTRAP_SERVER` | Kafka broker, e.g. `kafka:9092`: enables the consumer |
+| `KAFKA_TOPIC_MANUFACTURING_INSTANCE` | Topic of the requests (required with `KAFKA_BOOTSTRAP_SERVER`) |
+| `KAFKA_USERNAME`, `KAFKA_PASSWORD` | Credentials for SASL PLAIN authentication, if both are set |
+| `KAFKA_TIME_LIMIT` | Time limit in seconds for the requests without a `TimeLimit` header (default 120, at most 3600) |
+
+```sh
+docker run -p 5000:5000 \
+  -e KAFKA_BOOTSTRAP_SERVER=kafka:9092 \
+  -e KAFKA_TOPIC_MANUFACTURING_INSTANCE=manufacturing-instance \
+  ghcr.io/ai4work-project/manufacturing-scheduler:latest
+```
+
+Each request is a message with the same JSON body as `/schedule` and these headers:
+
+- `CorrelationId` (required): copied to the reply, to match it with its request;
+- `ReplyTopic` (required): topic where the reply is sent;
+- `TimeLimit` (optional): time limit in seconds for the solver, between 1 and 3600; `KAFKA_TIME_LIMIT` if missing. Unlike `/schedule`, a Kafka request always has a time limit, since a consumer that does not poll for longer than the longest solve leaves its group;
+- `Strategy` (optional): `full`, `enumerate` (default), `hint` or `rolling`, as the `strategy` query parameter of `/schedule`.
+
+A message without `CorrelationId` or `ReplyTopic` cannot be answered: it is logged and skipped.
+Every other request gets a reply on its `ReplyTopic`, with the `CorrelationId` of the request and a `Status` header with the status code `/schedule` would return:
+
+- **200**: the body is the schedule, as returned by `/schedule`;
+- **400**, **422**, **500**: the body is the error, as returned by `/schedule`. An invalid `TimeLimit` or `Strategy` header gives 422.
+
+The requests are processed one at a time, by the consumer group `manufacturing-scheduler`, and each request is committed once its reply has been sent: a request in progress when the scheduler stops is processed again when it restarts.
+The consumer creates the request topic if the broker allows it, and logs `Waiting...` when it is idle, after starting or after a request.
+The same consumer is used by the [logistics](https://github.com/AI4WORK-Project/logistics-scheduler) and [healthcare](https://github.com/AI4WORK-Project/healthcare-scheduler) schedulers.
 
 ## Examples
 
@@ -123,6 +160,7 @@ python -m pytest tests
 ```
 
 The API tests start the server on port 5000 themselves, so the port must be free. The validator tests take a few minutes.
+The Kafka tests start a Kafka broker with [Testcontainers](https://testcontainers.com/), so they need Docker.
 
 The CI runs the tests on every pull request. Every push to `main` publishes the Docker image `ghcr.io/ai4work-project/manufacturing-scheduler:latest`, and every tag `vX.Y.Z` publishes `ghcr.io/ai4work-project/manufacturing-scheduler:X.Y.Z`.
 
