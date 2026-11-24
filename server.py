@@ -8,15 +8,15 @@ from apiflask.fields import Integer, String
 from apiflask.validators import OneOf, Range
 from flask import Response, request
 from flask_cors import CORS
-from marshmallow import EXCLUDE, RAISE
+from marshmallow import EXCLUDE
 from marshmallow_dataclass import class_schema
 from werkzeug.exceptions import BadRequest
 
+import service
 from manufacturing import (
+    STRATEGIES,
     ManufacturingInstance,
     ManufacturingSolution,
-    STRATEGIES,
-    get_solution_with_granularity_fallback,
     solution_figure,
 )
 
@@ -48,32 +48,6 @@ InstanceSchema = class_schema(ManufacturingInstance, base_schema=DocSchema)
 SolutionSchema = class_schema(ManufacturingSolution, base_schema=DocSchema)
 
 
-class UnknownFieldsSchema(Schema):
-    """Base of the schema used only to find the unknown fields of a request."""
-
-    class Meta:
-        unknown = RAISE
-
-
-InstanceUnknownFieldsSchema = class_schema(
-    ManufacturingInstance, base_schema=UnknownFieldsSchema
-)
-
-
-def unknown_fields(data) -> list[str]:
-    """Return the paths of the fields of the request that are not part of an
-    instance, such as boxes.0.sise: they are ignored."""
-
-    def paths(errors: dict, prefix: str):
-        for key, value in errors.items():
-            if value == ["Unknown field."]:
-                yield f"{prefix}{key}"
-            elif isinstance(value, dict):
-                yield from paths(value, f"{prefix}{key}.")
-
-    return sorted(paths(InstanceUnknownFieldsSchema().validate(data), ""))
-
-
 class ScheduleQuerySchema(Schema):
     time_limit = Integer(
         required=False,
@@ -85,7 +59,7 @@ class ScheduleQuerySchema(Schema):
     )
     strategy = String(
         required=False,
-        load_default="enumerate",
+        load_default=service.DEFAULT_STRATEGY,
         validate=OneOf(STRATEGIES),
         metadata={
             "description": "How the solver searches for a solution: full, "
@@ -104,7 +78,6 @@ ERROR_RESPONSES = {
     422: 'Invalid input: {"message": "Validation error", "detail": "..."}',
     500: 'Internal server error: {"message": "..."}',
 }
-
 
 
 class LastScheduleGantt:
@@ -147,6 +120,10 @@ def json_response(body: dict, status: int) -> Response:
     )
 
 
+def result_response(result: service.ScheduleResult) -> Response:
+    return Response(result.body, mimetype="application/json", status=result.status)
+
+
 @app.get("/health")
 @app.output(HealthSchema)
 @app.doc(summary="Check if the service is alive and reachable")
@@ -156,12 +133,7 @@ def health_check():
 
 
 def validation_error_response(error: Exception) -> Response:
-    if isinstance(error, KeyError):
-        detail = f"Missing field {error}"
-    else:
-        detail = str(error) or type(error).__name__
-    logging.error(f"Validation: {detail}")
-    return json_response({"message": "Validation error", "detail": detail}, 422)
+    return result_response(service.validation_error(error))
 
 
 @app.errorhandler(BadRequest)
@@ -198,40 +170,18 @@ def time_limit_arg() -> int | None:
 def schedule(query_data, json_data):
     logging.info("Schedule request received!")
 
-    strategy = request.args.get("strategy", "enumerate", type=str)
+    strategy = request.args.get("strategy", service.DEFAULT_STRATEGY, type=str)
 
     try:
         time_limit = time_limit_arg()
-        if strategy not in STRATEGIES:
-            raise ValueError(
-                f"Unknown strategy {strategy}, expected one of {', '.join(STRATEGIES)}"
-            )
-        instance: ManufacturingInstance = ManufacturingInstance.from_dict(request.json)
-    except Exception as e:
+        service.check_strategy(strategy)
+    except ValueError as e:
         return validation_error_response(e)
 
-    if ignored := unknown_fields(request.json):
-        logging.warning(f"Ignoring unknown fields: {', '.join(ignored)}")
-    logging.info(f"Time limit: {time_limit}")
-    logging.info(f"Strategy: {strategy}")
-
-    try:
-        solution = get_solution_with_granularity_fallback(
-            instance, time_limit=time_limit, strategy=strategy
-        )
-        if solution is None:
-            logging.info("No solution has been found for the given problem")
-            return json_response(
-                {"message": "No solution has been found for the given problem"}, 400
-            )
-        logging.info("Solution found")
-
-    except Exception as e:
-        logging.exception("Error while computing the schedule")
-        return json_response({"message": str(e)}, 500)
-
-    last_schedule_gantt_html.update(solution)
-    return Response(solution.to_json(), mimetype="application/json", status=200)
+    result = service.schedule(request.json, time_limit, strategy)
+    if result.schedule is not None:
+        last_schedule_gantt_html.update(*result.schedule)
+    return result_response(result)
 
 
 @app.get("/last_schedule_gantt")
