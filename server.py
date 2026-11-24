@@ -1,79 +1,271 @@
-import os
+import json
 import logging
-import pathlib
-from flask import Flask, Response, request, send_file
+import threading
+from importlib.metadata import PackageNotFoundError, version
+
+from apiflask import APIFlask, HTTPError, Schema
+from apiflask.fields import Integer, String
+from apiflask.validators import OneOf, Range
+from flask import Response, request
+from flask_cors import CORS
+from marshmallow import EXCLUDE, RAISE
+from marshmallow_dataclass import class_schema
+from werkzeug.exceptions import BadRequest
+
 from manufacturing import (
     ManufacturingInstance,
+    ManufacturingSolution,
     STRATEGIES,
     get_solution_with_granularity_fallback,
-    plot_solution,
+    solution_figure,
 )
 
 logging.basicConfig(level=logging.INFO)
 
-app = Flask("Manufacturing-API")
+try:
+    __version__ = version("manufacturing")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
-plot_img_path = os.path.join(
-    pathlib.Path(__file__).parent.resolve(), "saved_plots", "plot.png"
+app = APIFlask(
+    "Manufacturing-API",
+    title="Human-Aware Task Planner – Packaging Machine Management",
+    version=__version__,
 )
-plot_html_path = os.path.join(
-    pathlib.Path(__file__).parent.resolve(), "saved_plots", "plot.html"
+app.openapi_version = "3.0.2"
+CORS(app)
+
+
+class DocSchema(Schema):
+    """The schemas only document the API: the input is parsed and validated by
+    the dataclasses, so validation is disabled and unknown fields are ignored."""
+
+    class Meta:
+        unknown = EXCLUDE
+
+
+InstanceSchema = class_schema(ManufacturingInstance, base_schema=DocSchema)
+SolutionSchema = class_schema(ManufacturingSolution, base_schema=DocSchema)
+
+
+class UnknownFieldsSchema(Schema):
+    """Base of the schema used only to find the unknown fields of a request."""
+
+    class Meta:
+        unknown = RAISE
+
+
+InstanceUnknownFieldsSchema = class_schema(
+    ManufacturingInstance, base_schema=UnknownFieldsSchema
 )
 
 
-@app.route("/schedule", methods=["POST"])
-def schedule():
+def unknown_fields(data) -> list[str]:
+    """Return the paths of the fields of the request that are not part of an
+    instance, such as boxes.0.sise: they are ignored."""
+
+    def paths(errors: dict, prefix: str):
+        for key, value in errors.items():
+            if value == ["Unknown field."]:
+                yield f"{prefix}{key}"
+            elif isinstance(value, dict):
+                yield from paths(value, f"{prefix}{key}.")
+
+    return sorted(paths(InstanceUnknownFieldsSchema().validate(data), ""))
+
+
+class ScheduleQuerySchema(Schema):
+    time_limit = Integer(
+        required=False,
+        validate=Range(min=1),
+        metadata={
+            "description": "Time limit in seconds for the solver, covering all the "
+            "attempts. If not provided, the solver runs without a time limit."
+        },
+    )
+    strategy = String(
+        required=False,
+        load_default="enumerate",
+        validate=OneOf(STRATEGIES),
+        metadata={
+            "description": "How the solver searches for a solution: full, "
+            "enumerate (default), hint or rolling. See the README for details."
+        },
+    )
+
+
+class HealthSchema(Schema):
+    status = String(metadata={"example": "healthy"})
+    version = String(metadata={"example": __version__})
+
+
+ERROR_RESPONSES = {
+    400: "No solution has been found for the given problem",
+    422: 'Invalid input: {"message": "Validation error", "detail": "..."}',
+    500: 'Internal server error: {"message": "..."}',
+}
+
+
+
+class LastScheduleGantt:
+    """Last computed schedule, kept in memory and rendered as an HTML page
+    only when it is requested."""
+
+    def __init__(self, render):
+        self._render = render
+        self._lock = threading.Lock()
+        self._schedule = None
+        self._html = None
+
+    def update(self, *schedule):
+        with self._lock:
+            self._schedule = schedule
+            self._html = None
+
+    def html(self):
+        """Return the HTML page, None if no schedule has been computed yet.
+
+        Raise the rendering error if the page cannot be rendered."""
+        with self._lock:
+            if self._html is None and self._schedule is not None:
+                self._html = self._render(*self._schedule)
+            return self._html
+
+
+def render_schedule(solution) -> str:
+    return solution_figure(solution).to_html(include_plotlyjs="cdn")
+
+
+last_schedule_gantt_html = LastScheduleGantt(render_schedule)
+
+
+def json_response(body: dict, status: int) -> Response:
+    return Response(
+        json.dumps(body, separators=(",", ":")),
+        mimetype="application/json",
+        status=status,
+    )
+
+
+@app.get("/health")
+@app.output(HealthSchema)
+@app.doc(summary="Check if the service is alive and reachable")
+def health_check():
+    logging.debug("Health check pinged.")
+    return json_response({"status": "healthy", "version": __version__}, 200)
+
+
+def validation_error_response(error: Exception) -> Response:
+    if isinstance(error, KeyError):
+        detail = f"Missing field {error}"
+    else:
+        detail = str(error) or type(error).__name__
+    logging.error(f"Validation: {detail}")
+    return json_response({"message": "Validation error", "detail": detail}, 422)
+
+
+@app.errorhandler(BadRequest)
+def bad_request(error: BadRequest) -> Response:
+    # the request parser attaches the decoding error to the 400 it raises for a
+    # body that is not valid JSON: report it as invalid input, as documented
+    decoding_error = getattr(error, "exc", None)
+    if isinstance(decoding_error, (json.JSONDecodeError, UnicodeDecodeError)):
+        return validation_error_response(ValueError(f"Invalid JSON: {decoding_error}"))
+    return app.error_callback(HTTPError(400, message=error.name))
+
+
+def time_limit_arg() -> int | None:
+    """Return the time_limit query parameter, None if it is not given.
+
+    Raise ValueError if it is not a positive integer."""
+    value = request.args.get("time_limit")
+    if value is None:
+        return None
     try:
-        logging.info("Schedule request received!")
+        time_limit = int(value)
+    except ValueError:
+        time_limit = 0
+    if time_limit <= 0:
+        raise ValueError(f"time_limit must be a positive integer, got '{value}'")
+    return time_limit
 
-        instance: ManufacturingInstance = ManufacturingInstance.from_dict(request.json)
 
-        time_limit = request.args.get("time_limit", None, type=int)
-        logging.info(f"Time limit: {time_limit}")
+@app.post("/schedule")
+@app.input(ScheduleQuerySchema, location="query", validation=False)
+@app.input(InstanceSchema, location="json", validation=False)
+@app.output(SolutionSchema)
+@app.doc(summary="Compute a replenishment schedule", responses=ERROR_RESPONSES)
+def schedule(query_data, json_data):
+    logging.info("Schedule request received!")
 
-        strategy = request.args.get("strategy", "enumerate", type=str)
-        logging.info(f"Strategy: {strategy}")
+    strategy = request.args.get("strategy", "enumerate", type=str)
+
+    try:
+        time_limit = time_limit_arg()
         if strategy not in STRATEGIES:
-            return Response(
-                '{"message":"Unknown strategy %s"}' % strategy,
-                mimetype="application/json",
-                status=400,
+            raise ValueError(
+                f"Unknown strategy {strategy}, expected one of {', '.join(STRATEGIES)}"
             )
+        instance: ManufacturingInstance = ManufacturingInstance.from_dict(request.json)
+    except Exception as e:
+        return validation_error_response(e)
+
+    if ignored := unknown_fields(request.json):
+        logging.warning(f"Ignoring unknown fields: {', '.join(ignored)}")
+    logging.info(f"Time limit: {time_limit}")
+    logging.info(f"Strategy: {strategy}")
+
+    try:
         solution = get_solution_with_granularity_fallback(
             instance, time_limit=time_limit, strategy=strategy
         )
-        if solution is not None:
-            logging.info(f"Solution found")
-            plot_solution(solution, image_path=plot_img_path, html_path=plot_html_path)
-        else:
+        if solution is None:
             logging.info("No solution has been found for the given problem")
-            return Response(
-                '{"message":"No solution has been found for the given problem"}',
-                mimetype="application/json",
-                status=400,
+            return json_response(
+                {"message": "No solution has been found for the given problem"}, 400
             )
+        logging.info("Solution found")
 
     except Exception as e:
-        return Response(
-            '{"message":"%s"}' % str(e), mimetype="application/json", status=500
-        )
+        logging.exception("Error while computing the schedule")
+        return json_response({"message": str(e)}, 500)
 
+    last_schedule_gantt_html.update(solution)
     return Response(solution.to_json(), mimetype="application/json", status=200)
 
 
-@app.route("/last_schedule_gantt", methods=["GET"])
+@app.get("/last_schedule_gantt")
+@app.doc(
+    summary="Visualize the last computed schedule",
+    description="HTML chart of the boxes left in each drawer along the "
+    "construction sequence, the replenishments of each drawer and the groups of "
+    "consecutive replenishments in the last schedule computed by /schedule.",
+    responses={
+        200: {"description": "HTML visualization", "content": {"text/html": {}}},
+        404: "No schedule has been computed yet",
+        500: "The last schedule could not be visualized",
+    },
+)
 def last_schedule_gantt():
     logging.info("Received request for the last generated schedule plot html.")
-    if not os.path.exists(plot_html_path):
-        return Response(
-            '{"message":"Gantt html not found"}',
-            mimetype="application/json",
-            status=404,
+    try:
+        html = last_schedule_gantt_html.html()
+    except Exception:
+        logging.exception("Could not visualize the last schedule")
+        return json_response(
+            {"message": "The last schedule could not be visualized"}, 500
         )
-    return send_file(plot_html_path, mimetype="text/html")
+    if html is None:
+        return json_response({"message": "Gantt html not found"}, 404)
+    return Response(html, mimetype="text/html")
 
 
-if __name__ == "__main__":
+def start():
+    logging.info("Starting...")
     from waitress import serve
 
     serve(app, host="0.0.0.0", port=5000)
+
+
+if __name__ == "__main__":
+    start()

@@ -5,4 +5,4 @@ from .factory import (
     STRATEGIES,
     get_solution_with_granularity_fallback,
 )
-from .visualize import plot_solution
+from .visualize import plot_solution, solution_figure

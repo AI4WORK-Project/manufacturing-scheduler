@@ -1,27 +1,34 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "manufacturing"
 version = "0.1.0"
+description = "Human-Aware Task Planner – Packaging Machine Management"
+license = "EPL-2.0"
+requires-python = ">=3.10"
 dependencies = [
     "ortools==9.12.4544",
-    "matplotlib==3.10.1",
+    "matplotlib==3.10.6",
     "plotly==6.2.0",
     "kaleido==0.1.0",
-    "pandas==2.2.3",
+    "pandas==2.3.3",
     "dataclasses-json==0.6.7",
-    "flask==3.1.0",
-    "waitress==3.0.2"
+    "flask==3.1.2",
+    "apiflask==3.1.0",
+    "marshmallow_dataclass==8.7.1",
+    "waitress==3.0.2",
+    "flask-cors==6.0.2"
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-exclude = ["saved_plots*"]
+include = ["manufacturing*"]
 
 [project.optional-dependencies]
 test = [
     "pytest",
     "requests"
 ]
+example = ["requests"]
