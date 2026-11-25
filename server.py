@@ -12,7 +12,7 @@ from flask import Response, request
 from flask_cors import CORS
 from marshmallow import EXCLUDE
 from marshmallow_dataclass import class_schema
-from werkzeug.exceptions import BadRequest
+from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 import kafka_worker
 import service
@@ -197,10 +197,11 @@ def schedule(query_data, json_data):
     try:
         time_limit = time_limit_arg()
         service.check_strategy(strategy)
-    except ValueError as e:
+        data = request.json
+    except (ValueError, UnsupportedMediaType) as e:
         return validation_error_response(e)
 
-    result = service.schedule(request.json, time_limit, strategy)
+    result = service.schedule(data, time_limit, strategy)
     if result.schedule is not None:
         last_schedule_gantt_html.update(*result.schedule)
     return result_response(result)
