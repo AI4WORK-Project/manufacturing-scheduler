@@ -69,9 +69,10 @@ def test_invalid_instance():
     assert len(response.json()["detail"]) > 0
 
 
-def test_malformed_json():
+@pytest.mark.parametrize("data", ['{"operators": 2,', "", " "])
+def test_malformed_json(data):
     response = requests.post(
-        URL, data='{"operators": 2,', headers={"Content-Type": "application/json"}
+        URL, data=data, headers={"Content-Type": "application/json"}
     )
     assert response.status_code == 422
     assert response.json()["message"] == "Validation error"

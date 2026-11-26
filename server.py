@@ -209,6 +209,10 @@ def schedule(query_data, json_data):
         data = request.json
     except (ValueError, UnsupportedMediaType) as e:
         return validation_error_response(e)
+    except BadRequest:
+        # the request parser decodes the body before, and leaves out only an
+        # empty one: report it as invalid input, as documented
+        return validation_error_response(ValueError("Invalid JSON: empty body"))
 
     result = service.schedule(data, time_limit, strategy)
     if result.schedule is not None:
