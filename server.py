@@ -11,7 +11,6 @@ from apiflask.fields import Integer, String
 from apiflask.validators import OneOf, Range
 from flask import Response, request
 from flask_cors import CORS
-from marshmallow import EXCLUDE
 from marshmallow_dataclass import class_schema
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
@@ -19,7 +18,6 @@ import kafka_worker
 import service
 from manufacturing import (
     STRATEGIES,
-    ManufacturingInstance,
     ManufacturingSolution,
     solution_figure,
 )
@@ -40,16 +38,12 @@ app.openapi_version = "3.0.2"
 CORS(app)
 
 
-class DocSchema(Schema):
-    """The schemas only document the API: the input is parsed and validated by
-    the dataclasses, so validation is disabled and unknown fields are ignored."""
-
-    class Meta:
-        unknown = EXCLUDE
-
-
-InstanceSchema = class_schema(ManufacturingInstance, base_schema=DocSchema)
-SolutionSchema = class_schema(ManufacturingSolution, base_schema=DocSchema)
+# the schemas only document the API: the input is parsed and validated by the
+# dataclasses, so validation is disabled
+InstanceSchema = service.InstanceSchema
+SolutionSchema = class_schema(
+    ManufacturingSolution, base_schema=service.DataclassSchema
+)
 
 
 class ScheduleQuerySchema(Schema):

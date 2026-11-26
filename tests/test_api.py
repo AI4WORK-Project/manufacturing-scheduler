@@ -17,6 +17,7 @@ import service
 URL = "http://0.0.0.0:5000/schedule"
 HEALTH_URL = "http://0.0.0.0:5000/health"
 GANTT_URL = "http://0.0.0.0:5000/last_schedule_gantt"
+OPENAPI_URL = "http://0.0.0.0:5000/openapi.json"
 INSTANCES_PATH = os.path.join(pathlib.Path(__file__).parent.resolve(), "instances")
 
 logger = logging.getLogger("test_api")
@@ -131,7 +132,22 @@ def test_unknown_fields():
 
     instance["minimum_remaining_box"] = 1
     instance["boxes"][1]["sise"] = "M"
-    assert service.unknown_fields(instance) == ["boxes.1.sise", "minimum_remaining_box"]
+    instance["drawers"]["lower_level"][0]["enable"] = True
+    instance["drawers"]["upper_level"][0]["enable"] = True
+    assert service.unknown_fields(instance) == [
+        "boxes.1.sise",
+        "drawers.lower_level.0.enable",
+        "drawers.upper_level.0.enable",
+        "minimum_remaining_box",
+    ]
+
+
+def test_openapi_ignores_unknown_fields():
+    # each dataclass has a single schema, which does not reject unknown fields
+    schemas = requests.get(OPENAPI_URL).json()["components"]["schemas"]
+    assert "Drawer1" not in schemas
+    for name in ("ManufacturingInstance", "Drawers", "Drawer", "Box"):
+        assert "additionalProperties" not in schemas[name]
 
 
 def test_instance_not_solvable():
